@@ -652,6 +652,49 @@ class _LoanListScreenState extends State<LoanListScreen> with WidgetsBindingObse
     }
   }
 
+  String _getLoanTypeFilterLabel(LoanTypeFilter filter) {
+    switch (filter) {
+      case LoanTypeFilter.all:
+        return 'Tất cả khoản vay';
+      case LoanTypeFilter.lendNew:
+        return 'Cho vay mới';
+      case LoanTypeFilter.lendOld:
+        return 'Cho vay cũ';
+      case LoanTypeFilter.borrowNew:
+        return 'Đi vay mới';
+      case LoanTypeFilter.borrowOld:
+        return 'Đi vay cũ';
+    }
+  }
+
+  PopupMenuItem<LoanTypeFilter> _buildLoanFilterPopupMenuItem(
+      LoanTypeFilter value, String label) {
+    final isSelected = _loanTypeFilter == value;
+    return PopupMenuItem<LoanTypeFilter>(
+      value: value,
+      child: Row(
+        children: [
+          Expanded(
+            child: Text(
+              label,
+              style: TextStyle(
+                color: Colors.white,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 15,
+              ),
+            ),
+          ),
+          if (isSelected)
+            const Icon(
+              Icons.check_rounded,
+              color: Colors.white,
+              size: 18,
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
@@ -679,83 +722,64 @@ class _LoanListScreenState extends State<LoanListScreen> with WidgetsBindingObse
                   fontSize: 20,
                 ),
               )
-            : DropdownButtonHideUnderline(
-                child: DropdownButton<LoanTypeFilter>(
-                  value: _loanTypeFilter,
-                  icon: Icon(
-                    Icons.keyboard_arrow_down,
-                    color: Theme.of(context).colorScheme.onPrimary,
+            : Theme(
+                data: Theme.of(context).copyWith(
+                  splashColor: Colors.transparent,
+                  highlightColor: Colors.transparent,
+                ),
+                child: PopupMenuButton<LoanTypeFilter>(
+                  initialValue: _loanTypeFilter,
+                  tooltip: 'Lọc khoản vay',
+                  offset: const Offset(0, 46),
+                  color: isDark ? const Color(0xFF2d3a4a) : Theme.of(context).colorScheme.primary,
+                  elevation: 8,
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    side: BorderSide(
+                      color: Colors.white.withValues(alpha: 0.15),
+                      width: 1,
+                    ),
                   ),
-                  style: TextStyle(
-                    color: Theme.of(context).colorScheme.onPrimary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 20,
-                  ),
-                  dropdownColor: isDark
-                    ? const Color(0xFF2d3a4a)
-                    : Theme.of(context).colorScheme.primary,
-                  onChanged: (LoanTypeFilter? newValue) {
-                    if (newValue != null) {
-                      _onLoanTypeFilterChanged(newValue);
-                    }
+                  onSelected: (LoanTypeFilter newValue) {
+                    _onLoanTypeFilterChanged(newValue);
                   },
-                  items: [
-                    DropdownMenuItem<LoanTypeFilter>(
-                      value: LoanTypeFilter.all,
-                      child: Text(
-                        'Tất cả khoản vay',
-                        style: TextStyle(
-                          color: Theme.of(context).colorScheme.onPrimary,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ),
-                    DropdownMenuItem<LoanTypeFilter>(
-                      value: LoanTypeFilter.lendNew,
-                      child: Text(
-                        'Cho vay mới',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ),
-                    DropdownMenuItem<LoanTypeFilter>(
-                      value: LoanTypeFilter.lendOld,
-                      child: Text(
-                        'Cho vay cũ',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ),
-                    DropdownMenuItem<LoanTypeFilter>(
-                      value: LoanTypeFilter.borrowNew,
-                      child: Text(
-                        'Đi vay mới',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ),
-                    DropdownMenuItem<LoanTypeFilter>(
-                      value: LoanTypeFilter.borrowOld,
-                      child: Text(
-                        'Đi vay cũ',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontWeight: FontWeight.bold,
-                          fontSize: 18,
-                        ),
-                      ),
-                    ),
+                  itemBuilder: (BuildContext context) => [
+                    _buildLoanFilterPopupMenuItem(LoanTypeFilter.all, 'Tất cả khoản vay'),
+                    _buildLoanFilterPopupMenuItem(LoanTypeFilter.lendNew, 'Cho vay mới'),
+                    _buildLoanFilterPopupMenuItem(LoanTypeFilter.lendOld, 'Cho vay cũ'),
+                    _buildLoanFilterPopupMenuItem(LoanTypeFilter.borrowNew, 'Đi vay mới'),
+                    _buildLoanFilterPopupMenuItem(LoanTypeFilter.borrowOld, 'Đi vay cũ'),
                   ],
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 6),
+                    decoration: BoxDecoration(
+                      color: Colors.white.withValues(alpha: isDark ? 0.12 : 0.2),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(
+                        color: Colors.white.withValues(alpha: 0.25),
+                        width: 1,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          _getLoanTypeFilterLabel(_loanTypeFilter),
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                        const SizedBox(width: 4),
+                        const Icon(
+                          Icons.keyboard_arrow_down_rounded,
+                          color: Colors.white,
+                          size: 20,
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ),
         backgroundColor: isDark
