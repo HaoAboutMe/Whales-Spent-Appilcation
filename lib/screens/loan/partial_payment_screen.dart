@@ -6,6 +6,7 @@ import '../../models/loan.dart';
 import '../../utils/currency_formatter.dart';
 import '../../database/repositories/loan_repository.dart';
 import '../../providers/currency_provider.dart';
+import '../../services/loan_interest_service.dart';
 
 /// Custom TextInputFormatter for currency input
 class CurrencyInputFormatter extends TextInputFormatter {
@@ -90,6 +91,8 @@ class _PartialPaymentScreenState extends State<PartialPaymentScreen> {
   bool _isProcessing = false;
   double? _paymentAmount;
 
+  double get _maxPayable => widget.loan.hasInterest ? widget.loan.totalDebtAmount : widget.loan.remainingAmount;
+
   @override
   void initState() {
     super.initState();
@@ -131,10 +134,10 @@ class _PartialPaymentScreenState extends State<PartialPaymentScreen> {
       return;
     }
 
-    if (_paymentAmount! > widget.loan.remainingAmount) {
+    if (_paymentAmount! > _maxPayable + 1.0) {
       _showErrorDialog(
         'Số tiền thanh toán (${CurrencyFormatter.formatAmount(_paymentAmount!)}) '
-        'vượt quá số tiền còn lại (${CurrencyFormatter.formatAmount(widget.loan.remainingAmount)})',
+        'vượt quá số tiền còn lại (${CurrencyFormatter.formatAmount(_maxPayable)})',
       );
       return;
     }
@@ -177,6 +180,14 @@ class _PartialPaymentScreenState extends State<PartialPaymentScreen> {
   Future<bool> _showConfirmationDialog() async {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+
+    Map<String, double>? allocation;
+    if (widget.loan.hasInterest && _paymentAmount != null) {
+      allocation = LoanInterestService().previewPaymentAllocation(
+        loan: widget.loan,
+        paymentAmount: _paymentAmount!,
+      );
+    }
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -228,6 +239,35 @@ class _PartialPaymentScreenState extends State<PartialPaymentScreen> {
                 ],
               ),
             ),
+            if (allocation != null) ...[
+              const SizedBox(height: 10),
+              Container(
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Phân bổ trừ tiền:',
+                      style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber.shade900),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      '• Trừ vào lãi: ${CurrencyFormatter.formatAmount(allocation['interestPaid']!)}',
+                      style: const TextStyle(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.w600),
+                    ),
+                    Text(
+                      '• Trừ vào gốc: ${CurrencyFormatter.formatAmount(allocation['principalPaid']!)}',
+                      style: const TextStyle(fontSize: 12, color: Color(0xFF4CAF50), fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ],
             const SizedBox(height: 12),
             Text(
               'Số dư sẽ ${widget.loan.loanType == 'lend' ? 'tăng' : 'giảm'} ${CurrencyFormatter.formatAmount(_paymentAmount!)}',
@@ -239,11 +279,11 @@ class _PartialPaymentScreenState extends State<PartialPaymentScreen> {
             ),
             const SizedBox(height: 8),
             Text(
-              'Còn lại: ${CurrencyFormatter.formatAmount(widget.loan.remainingAmount - _paymentAmount!)}',
+              'Dư nợ còn lại sau thanh toán: ${CurrencyFormatter.formatAmount((_maxPayable - _paymentAmount!).clamp(0.0, double.infinity))}',
               style: TextStyle(
                 fontSize: 12,
                 color: colorScheme.onSurfaceVariant,
-                fontStyle: FontStyle.italic,
+                fontWeight: FontWeight.w600,
               ),
             ),
           ],
@@ -300,7 +340,7 @@ class _PartialPaymentScreenState extends State<PartialPaymentScreen> {
 
   void _setFullAmount() {
     final currencyProvider = context.read<CurrencyProvider>();
-    final amount = widget.loan.remainingAmount;
+    final amount = _maxPayable;
 
     // Convert to current currency for display
     final displayAmount = currencyProvider.selectedCurrency == 'USD'
@@ -321,7 +361,7 @@ class _PartialPaymentScreenState extends State<PartialPaymentScreen> {
 
   void _setHalfAmount() {
     final currencyProvider = context.read<CurrencyProvider>();
-    final halfAmount = widget.loan.remainingAmount / 2;
+    final halfAmount = _maxPayable / 2;
 
     // Convert to current currency for display
     final displayAmount = currencyProvider.selectedCurrency == 'USD'
@@ -441,27 +481,63 @@ class _PartialPaymentScreenState extends State<PartialPaymentScreen> {
           ),
           const Divider(height: 24),
           _buildInfoRow(
-            'Tổng số tiền',
+            widget.loan.hasInterest ? 'Nợ gốc ban đầu' : 'Tổng số tiền',
             CurrencyFormatter.formatAmount(widget.loan.amount),
           ),
           const SizedBox(height: 8),
           _buildInfoRow(
-            'Đã trả',
+            widget.loan.hasInterest ? 'Gốc đã trả' : 'Đã trả',
             CurrencyFormatter.formatAmount(widget.loan.amountPaid),
             color: Colors.green,
           ),
-          const SizedBox(height: 8),
-          _buildInfoRow(
-            'Còn lại',
-            CurrencyFormatter.formatAmount(widget.loan.remainingAmount),
-            color: Colors.orange,
-            isBold: true,
-          ),
+          if (widget.loan.hasInterest) ...[
+            const SizedBox(height: 8),
+            _buildInfoRow(
+              'Gốc còn lại',
+              CurrencyFormatter.formatAmount(widget.loan.remainingPrincipal),
+              color: Colors.blueGrey,
+            ),
+            const SizedBox(height: 8),
+            _buildInfoRow(
+              'Lãi tích lũy phát sinh',
+              '+${CurrencyFormatter.formatAmount(widget.loan.accruedInterest)}',
+              color: Colors.amber,
+            ),
+            if (widget.loan.interestPaid > 0) ...[
+              const SizedBox(height: 8),
+              _buildInfoRow(
+                'Lãi đã trả',
+                CurrencyFormatter.formatAmount(widget.loan.interestPaid),
+                color: Colors.green,
+              ),
+            ],
+            const SizedBox(height: 8),
+            _buildInfoRow(
+              'Lãi còn nợ',
+              CurrencyFormatter.formatAmount(widget.loan.remainingInterest),
+              color: Colors.amber.shade800,
+            ),
+            const Divider(height: 16),
+            _buildInfoRow(
+              'Tổng dư nợ cần thanh toán',
+              CurrencyFormatter.formatAmount(widget.loan.totalDebtAmount),
+              color: Colors.orange,
+              isBold: true,
+            ),
+          ] else ...[
+            const SizedBox(height: 8),
+            _buildInfoRow(
+              'Còn lại',
+              CurrencyFormatter.formatAmount(widget.loan.remainingAmount),
+              color: Colors.orange,
+              isBold: true,
+            ),
+          ],
           // Show USD equivalent if in USD mode
           if (isUsd) ...[
             const SizedBox(height: 4),
             Text(
-              '≈ ${currencyProvider.convertFromVND(widget.loan.remainingAmount).toStringAsFixed(2)} USD cần trả',
+              '≈ ${currencyProvider.convertFromVND(_maxPayable).toStringAsFixed(2)} USD cần trả',
               style: TextStyle(
                 fontSize: 12,
                 color: Colors.orange[700],
@@ -588,7 +664,92 @@ class _PartialPaymentScreenState extends State<PartialPaymentScreen> {
             ),
           ),
         ],
+        _buildAllocationPreview(colorScheme),
       ],
+    );
+  }
+
+  Widget _buildAllocationPreview(ColorScheme colorScheme) {
+    if (!widget.loan.hasInterest || _paymentAmount == null || _paymentAmount! <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final allocation = LoanInterestService().previewPaymentAllocation(
+      loan: widget.loan,
+      paymentAmount: _paymentAmount!,
+    );
+
+    return Container(
+      margin: const EdgeInsets.only(top: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.amber.withValues(alpha: 0.1),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.pie_chart_outline, size: 16, color: Colors.amber),
+              const SizedBox(width: 6),
+              Text(
+                'Phân bổ thanh toán:',
+                style: TextStyle(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: Colors.amber.shade900,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 6),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('• Trừ vào lãi:', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+              Text(
+                CurrencyFormatter.formatAmount(allocation['interestPaid']!),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.amber),
+              ),
+            ],
+          ),
+          const SizedBox(height: 2),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('• Trừ vào gốc:', style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant)),
+              Text(
+                CurrencyFormatter.formatAmount(allocation['principalPaid']!),
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Color(0xFF4CAF50)),
+              ),
+            ],
+          ),
+          const Divider(height: 12),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text('Nợ gốc còn lại:', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+              Text(
+                CurrencyFormatter.formatAmount(allocation['remainingPrincipalAfter']!),
+                style: TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: colorScheme.onSurface),
+              ),
+            ],
+          ),
+          if (allocation['remainingInterestAfter']! > 0)
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Text('Lãi còn lại:', style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant)),
+                Text(
+                  CurrencyFormatter.formatAmount(allocation['remainingInterestAfter']!),
+                  style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w600, color: Colors.orange),
+                ),
+              ],
+            ),
+        ],
+      ),
     );
   }
 

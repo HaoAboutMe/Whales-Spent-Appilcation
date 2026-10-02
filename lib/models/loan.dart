@@ -46,8 +46,35 @@ class Loan {
   /// 1 = khoản vay/nợ cũ (chỉ ghi nhận, không tạo transaction ban đầu)
   final int isOldDebt;
 
-  /// Tổng số tiền đã trả (dùng cho partial payment)
+  /// Tổng số tiền nợ gốc đã trả (dùng cho partial payment)
   final double amountPaid;
+
+  /// Có tính lãi suất không (true: có tính lãi, false: không tính lãi)
+  final bool hasInterest;
+
+  /// Mức lãi suất (ví dụ: 1.5% hoặc 2000đ)
+  final double interestRate;
+
+  /// Đơn vị tính lãi: 'vnd_per_million_per_day', 'percent_per_month', 'percent_per_year', 'percent_per_day'
+  final String interestRateType;
+
+  /// Phương thức tính lãi: 'simple' (lãi đơn), 'compound' (lãi kép nhập gốc)
+  final String interestCalculationType;
+
+  /// Kỳ hạn chốt lãi: 'daily', 'monthly', 'end_of_term'
+  final String interestPeriod;
+
+  /// Tiền lãi đã tích lũy tính đến lần đồng bộ gần nhất
+  final double accruedInterest;
+
+  /// Tiền lãi đã được thanh toán
+  final double interestPaid;
+
+  /// Mốc thời gian tính lãi gần nhất
+  final DateTime? lastInterestCalculatedDate;
+
+  /// Hệ số phạt lãi quá hạn (mặc định 1.0)
+  final double overdueInterestMultiplier;
 
   /// Thời gian tạo bản ghi
   final DateTime createdAt;
@@ -71,6 +98,15 @@ class Loan {
     this.lastReminderSent,
     this.isOldDebt = 0,
     this.amountPaid = 0.0,
+    this.hasInterest = false,
+    this.interestRate = 0.0,
+    this.interestRateType = 'percent_per_month',
+    this.interestCalculationType = 'simple',
+    this.interestPeriod = 'monthly',
+    this.accruedInterest = 0.0,
+    this.interestPaid = 0.0,
+    this.lastInterestCalculatedDate,
+    this.overdueInterestMultiplier = 1.0,
     required this.createdAt,
     required this.updatedAt,
   });
@@ -93,6 +129,17 @@ class Loan {
       lastReminderSent: map['lastReminderSent'] != null ? DateTime.parse(map['lastReminderSent'] as String) : null,
       isOldDebt: (map['isOldDebt'] as int?) ?? 0,
       amountPaid: (map['amountPaid'] as num?)?.toDouble() ?? 0.0,
+      hasInterest: ((map['hasInterest'] as int?) ?? 0) == 1,
+      interestRate: (map['interestRate'] as num?)?.toDouble() ?? 0.0,
+      interestRateType: (map['interestRateType'] as String?) ?? 'percent_per_month',
+      interestCalculationType: (map['interestCalculationType'] as String?) ?? 'simple',
+      interestPeriod: (map['interestPeriod'] as String?) ?? 'monthly',
+      accruedInterest: (map['accruedInterest'] as num?)?.toDouble() ?? 0.0,
+      interestPaid: (map['interestPaid'] as num?)?.toDouble() ?? 0.0,
+      lastInterestCalculatedDate: map['lastInterestCalculatedDate'] != null
+          ? DateTime.tryParse(map['lastInterestCalculatedDate'] as String)
+          : null,
+      overdueInterestMultiplier: (map['overdueInterestMultiplier'] as num?)?.toDouble() ?? 1.0,
       createdAt: DateTime.parse(map['createdAt'] as String),
       updatedAt: DateTime.parse(map['updatedAt'] as String),
     );
@@ -116,6 +163,17 @@ class Loan {
       lastReminderSent: json['lastReminderSent'] != null ? DateTime.tryParse(json['lastReminderSent']) : null,
       isOldDebt: json['isOldDebt'] ?? 0,
       amountPaid: (json['amountPaid'] as num?)?.toDouble() ?? 0.0,
+      hasInterest: (json['hasInterest'] as bool?) ?? ((json['hasInterest'] as num?)?.toInt() == 1),
+      interestRate: (json['interestRate'] as num?)?.toDouble() ?? 0.0,
+      interestRateType: (json['interestRateType'] as String?) ?? 'percent_per_month',
+      interestCalculationType: (json['interestCalculationType'] as String?) ?? 'simple',
+      interestPeriod: (json['interestPeriod'] as String?) ?? 'monthly',
+      accruedInterest: (json['accruedInterest'] as num?)?.toDouble() ?? 0.0,
+      interestPaid: (json['interestPaid'] as num?)?.toDouble() ?? 0.0,
+      lastInterestCalculatedDate: json['lastInterestCalculatedDate'] != null
+          ? DateTime.tryParse(json['lastInterestCalculatedDate'] as String)
+          : null,
+      overdueInterestMultiplier: (json['overdueInterestMultiplier'] as num?)?.toDouble() ?? 1.0,
       createdAt: DateTime.parse(json['createdAt']),
       updatedAt: json['updatedAt'] != null ? DateTime.parse(json['updatedAt']) : DateTime.parse(json['createdAt']),
     );
@@ -139,6 +197,15 @@ class Loan {
       'lastReminderSent': lastReminderSent?.toIso8601String(),
       'isOldDebt': isOldDebt,
       'amountPaid': amountPaid,
+      'hasInterest': hasInterest ? 1 : 0,
+      'interestRate': interestRate,
+      'interestRateType': interestRateType,
+      'interestCalculationType': interestCalculationType,
+      'interestPeriod': interestPeriod,
+      'accruedInterest': accruedInterest,
+      'interestPaid': interestPaid,
+      'lastInterestCalculatedDate': lastInterestCalculatedDate?.toIso8601String(),
+      'overdueInterestMultiplier': overdueInterestMultiplier,
       'createdAt': createdAt.toIso8601String(),
       'updatedAt': updatedAt.toIso8601String(),
     };
@@ -161,6 +228,15 @@ class Loan {
     DateTime? lastReminderSent,
     int? isOldDebt,
     double? amountPaid,
+    bool? hasInterest,
+    double? interestRate,
+    String? interestRateType,
+    String? interestCalculationType,
+    String? interestPeriod,
+    double? accruedInterest,
+    double? interestPaid,
+    DateTime? lastInterestCalculatedDate,
+    double? overdueInterestMultiplier,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) {
@@ -180,6 +256,15 @@ class Loan {
       lastReminderSent: lastReminderSent ?? this.lastReminderSent,
       isOldDebt: isOldDebt ?? this.isOldDebt,
       amountPaid: amountPaid ?? this.amountPaid,
+      hasInterest: hasInterest ?? this.hasInterest,
+      interestRate: interestRate ?? this.interestRate,
+      interestRateType: interestRateType ?? this.interestRateType,
+      interestCalculationType: interestCalculationType ?? this.interestCalculationType,
+      interestPeriod: interestPeriod ?? this.interestPeriod,
+      accruedInterest: accruedInterest ?? this.accruedInterest,
+      interestPaid: interestPaid ?? this.interestPaid,
+      lastInterestCalculatedDate: lastInterestCalculatedDate ?? this.lastInterestCalculatedDate,
+      overdueInterestMultiplier: overdueInterestMultiplier ?? this.overdueInterestMultiplier,
       createdAt: createdAt ?? this.createdAt,
       updatedAt: updatedAt ?? this.updatedAt,
     );
@@ -200,17 +285,58 @@ class Loan {
   /// Kiểm tra xem khoản vay có bị quá hạn không
   bool get isOverdue => status == 'overdue';
 
-  /// Số tiền còn lại cần trả
-  double get remainingAmount => amount - amountPaid;
+  /// Số tiền gốc còn lại cần trả
+  double get remainingAmount => (amount - amountPaid).clamp(0.0, double.infinity);
 
-  /// Phần trăm đã trả (0-100)
+  /// Tiền gốc còn lại (tương đương remainingAmount)
+  double get remainingPrincipal => remainingAmount;
+
+  /// Tiền lãi còn lại chưa thanh toán
+  double get remainingInterest => hasInterest
+      ? (accruedInterest - interestPaid).clamp(0.0, double.infinity)
+      : 0.0;
+
+  /// Tổng nợ hiện tại cần thanh toán (Gốc còn lại + Lãi còn lại)
+  double get totalDebtAmount => hasInterest
+      ? (remainingPrincipal + remainingInterest)
+      : remainingAmount;
+
+  /// Tổng số tiền đã thanh toán (Gốc đã trả + Lãi đã trả)
+  double get totalPaid => amountPaid + interestPaid;
+
+  /// Mô tả ngắn gọn mức lãi suất để hiển thị trên UI
+  String get interestRateDescription {
+    if (!hasInterest || interestRate <= 0) return 'Không lãi';
+    switch (interestRateType) {
+      case 'vnd_per_million_per_day':
+        final formattedK = (interestRate >= 1000)
+            ? '${(interestRate / 1000).toStringAsFixed(interestRate % 1000 == 0 ? 0 : 1)}k'
+            : '${interestRate.toInt()}đ';
+        return '$formattedK/triệu/ngày';
+      case 'percent_per_month':
+        return '${interestRate.toStringAsFixed(interestRate.truncateToDouble() == interestRate ? 0 : 1)}%/tháng';
+      case 'percent_per_year':
+        return '${interestRate.toStringAsFixed(interestRate.truncateToDouble() == interestRate ? 0 : 1)}%/năm';
+      case 'percent_per_day':
+        return '${interestRate.toStringAsFixed(interestRate.truncateToDouble() == interestRate ? 0 : 2)}%/ngày';
+      default:
+        return '$interestRate%/tháng';
+    }
+  }
+
+  /// Phần trăm nợ gốc đã trả (0-100)
   double get paymentProgress => amount > 0 ? (amountPaid / amount * 100) : 0;
 
   /// Kiểm tra xem đã trả một phần chưa
-  bool get hasPartialPayment => amountPaid > 0 && amountPaid < amount;
+  bool get hasPartialPayment => (amountPaid > 0 || interestPaid > 0) && !isFullyPaid;
 
-  /// Kiểm tra xem đã trả đủ chưa
-  bool get isFullyPaid => amountPaid >= amount;
+  /// Kiểm tra xem đã trả đủ cả gốc lẫn lãi chưa
+  bool get isFullyPaid {
+    if (hasInterest) {
+      return remainingPrincipal <= 0 && remainingInterest <= 0;
+    }
+    return amountPaid >= amount;
+  }
 
   /// Kiểm tra xem khoản vay có quá hạn theo ngày không (tính toán thời gian thực)
   bool get isOverdueByDate {

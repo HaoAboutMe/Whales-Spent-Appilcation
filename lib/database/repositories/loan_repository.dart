@@ -1,9 +1,12 @@
 import 'dart:developer';
+import 'dart:math' as math;
 import 'package:sqflite/sqflite.dart';
 import '../database_helper.dart';
 import '../../models/loan.dart';
+import '../../models/loan_payment.dart';
 import '../../models/transaction.dart' as transaction_model;
 import '../../models/user.dart';
+import '../../services/loan_interest_service.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class LoanRepository {
@@ -318,6 +321,13 @@ class LoanRepository {
 
   Future<List<Loan>> getAllLoans() async {
     try {
+      // Tự động đồng bộ và tính lại tiền lãi cho các khoản vay đang hoạt động
+      try {
+        await LoanInterestService().syncAllActiveLoansInterest();
+      } catch (e) {
+        log('Lỗi sync lãi suất trong getAllLoans: $e');
+      }
+
       final db = await _db.database;
       final maps = await db.query(
         'loans',
@@ -339,7 +349,23 @@ class LoanRepository {
         whereArgs: [id],
       );
       if (maps.isNotEmpty) {
-        return Loan.fromMap(maps.first);
+        final loan = Loan.fromMap(maps.first);
+        if (loan.hasInterest && !loan.isPaid) {
+          try {
+            await LoanInterestService().recalculateLoanInterest(loan);
+            final updatedMaps = await db.query(
+              'loans',
+              where: 'id = ?',
+              whereArgs: [id],
+            );
+            if (updatedMaps.isNotEmpty) {
+              return Loan.fromMap(updatedMaps.first);
+            }
+          } catch (e) {
+            log('Lỗi recalculateLoanInterest: $e');
+          }
+        }
+        return loan;
       }
       return null;
     } catch (e) {
@@ -642,19 +668,37 @@ class LoanRepository {
           throw Exception('Số tiền thanh toán phải lớn hơn 0');
         }
 
-        final remainingAmount = currentLoan.remainingAmount;
-        if (paymentAmount > remainingAmount) {
-          throw Exception('Số tiền thanh toán ($paymentAmount) vượt quá số tiền còn lại ($remainingAmount)');
+        final maxPayable = currentLoan.hasInterest
+            ? currentLoan.totalDebtAmount
+            : currentLoan.remainingAmount;
+        if (paymentAmount > maxPayable + 1.0) {
+          throw Exception('Số tiền thanh toán ($paymentAmount) vượt quá số tiền còn lại ($maxPayable)');
         }
 
-        // 3. Cập nhật số tiền đã trả
-        final newAmountPaid = currentLoan.amountPaid + paymentAmount;
-        isFullyPaid = newAmountPaid >= currentLoan.amount;
+        // 3. Phân bổ tiền thanh toán vào LÃI trước, GỐC sau
+        double interestPaidThisTime = 0.0;
+        double principalPaidThisTime = paymentAmount;
 
-        log('New amount paid: $newAmountPaid, Fully paid: $isFullyPaid');
+        if (currentLoan.hasInterest) {
+          final unpaidInterest = currentLoan.remainingInterest;
+          interestPaidThisTime = math.min(unpaidInterest, paymentAmount);
+          principalPaidThisTime = paymentAmount - interestPaidThisTime;
+        }
+
+        final newAmountPaid = currentLoan.amountPaid + principalPaidThisTime;
+        final newInterestPaid = currentLoan.interestPaid + interestPaidThisTime;
+        final remainingPrincipalAfter = math.max(0.0, currentLoan.amount - newAmountPaid);
+        final remainingInterestAfter = math.max(0.0, currentLoan.accruedInterest - newInterestPaid);
+
+        isFullyPaid = currentLoan.hasInterest
+            ? (remainingPrincipalAfter <= 0 && remainingInterestAfter <= 0)
+            : (newAmountPaid >= currentLoan.amount);
+
+        log('New amount paid (Gốc): $newAmountPaid, New interest paid: $newInterestPaid, Fully paid: $isFullyPaid');
 
         final updatedLoan = currentLoan.copyWith(
           amountPaid: newAmountPaid,
+          interestPaid: newInterestPaid,
           status: isFullyPaid ? 'paid' : currentLoan.status,
           paidDate: isFullyPaid ? DateTime.now() : null,
           updatedAt: DateTime.now(),
@@ -667,13 +711,33 @@ class LoanRepository {
           whereArgs: [loanId],
         );
 
-        log('Cập nhật loan: amountPaid = $newAmountPaid, status = ${updatedLoan.status}');
+        log('Cập nhật loan: amountPaid = $newAmountPaid, interestPaid = $newInterestPaid, status = ${updatedLoan.status}');
 
-        // 4. Tạo transaction thanh toán
+        // 4. Lưu bản ghi lịch sử trả nợ vào bảng loan_payments
+        final paymentHistory = LoanPayment(
+          loanId: loanId,
+          paymentDate: DateTime.now(),
+          totalAmount: paymentAmount,
+          principalPaid: principalPaidThisTime,
+          interestPaid: interestPaidThisTime,
+          remainingPrincipalAfter: remainingPrincipalAfter,
+          notes: description,
+          createdAt: DateTime.now(),
+        );
+        await txn.insert('loan_payments', paymentHistory.toMap());
+        log('Đã lưu lịch sử thanh toán vào loan_payments');
+
+        // 5. Tạo transaction thanh toán
         final transactionType = currentLoan.loanType == 'lend' ? 'debt_collected' : 'debt_paid';
-        final defaultDescription = currentLoan.loanType == 'lend'
-            ? 'Thu nợ từ ${currentLoan.personName} (${isFullyPaid ? 'Hoàn tất' : 'Trả một phần'})'
-            : 'Trả nợ cho ${currentLoan.personName} (${isFullyPaid ? 'Hoàn tất' : 'Trả một phần'})';
+        String defaultDescription;
+        if (currentLoan.hasInterest && interestPaidThisTime > 0) {
+          final action = currentLoan.loanType == 'lend' ? 'Thu nợ từ' : 'Trả nợ cho';
+          defaultDescription = '$action ${currentLoan.personName} (Gốc: ${principalPaidThisTime.toStringAsFixed(0)}đ, Lãi: ${interestPaidThisTime.toStringAsFixed(0)}đ)';
+        } else {
+          defaultDescription = currentLoan.loanType == 'lend'
+              ? 'Thu nợ từ ${currentLoan.personName} (${isFullyPaid ? 'Hoàn tất' : 'Trả một phần'})'
+              : 'Trả nợ cho ${currentLoan.personName} (${isFullyPaid ? 'Hoàn tất' : 'Trả một phần'})';
+        }
 
         final paymentTransaction = transaction_model.Transaction(
           amount: paymentAmount,
@@ -689,7 +753,7 @@ class LoanRepository {
         await txn.insert('transactions', paymentTransaction.toMap());
         log('Tạo transaction thanh toán: type = $transactionType, amount = $paymentAmount');
 
-        // 5. Cập nhật số dư người dùng
+        // 6. Cập nhật số dư người dùng
         await _updateUserBalanceInTransaction(
           txn,
           currentUserId,

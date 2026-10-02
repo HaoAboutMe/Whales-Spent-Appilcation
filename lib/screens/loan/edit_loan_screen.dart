@@ -7,6 +7,7 @@ import '../../models/loan.dart';
 import '../../utils/currency_formatter.dart';
 import '../../providers/notification_provider.dart';
 import '../../providers/currency_provider.dart';
+import '../../services/loan_interest_service.dart';
 
 class EditLoanScreen extends StatefulWidget {
   final Loan loan;
@@ -30,6 +31,7 @@ class _EditLoanScreenState extends State<EditLoanScreen>
   late TextEditingController _personPhoneController;
   late TextEditingController _amountController;
   late TextEditingController _descriptionController;
+  late TextEditingController _interestRateController;
 
   // Form data
   late String _selectedType;
@@ -38,6 +40,11 @@ class _EditLoanScreenState extends State<EditLoanScreen>
   late bool _reminderEnabled;
   late int _reminderDays;
   late bool _isOldDebt;
+
+  // Interest data
+  late bool _hasInterest;
+  late String _interestRateType;
+  late String _interestCalculationType;
 
   // UI state
   bool _isLoading = false;
@@ -76,6 +83,18 @@ class _EditLoanScreenState extends State<EditLoanScreen>
     _reminderEnabled = loan.reminderEnabled;
     _reminderDays = loan.reminderDays ?? 3;
     _isOldDebt = loan.isOldDebt == 1;
+
+    // Initialize interest data
+    _hasInterest = loan.hasInterest;
+    _interestRateType = loan.interestRateType ?? 'vnd_per_million_per_day';
+    _interestCalculationType = loan.interestCalculationType ?? 'simple';
+    String initialRate = '2000';
+    if (loan.interestRate != null && loan.interestRate! > 0) {
+      initialRate = (loan.interestRate! % 1 == 0)
+          ? loan.interestRate!.toInt().toString()
+          : loan.interestRate!.toString();
+    }
+    _interestRateController = TextEditingController(text: initialRate);
   }
 
   void _initializeAnimations() {
@@ -99,6 +118,7 @@ class _EditLoanScreenState extends State<EditLoanScreen>
     _personPhoneController.dispose();
     _amountController.dispose();
     _descriptionController.dispose();
+    _interestRateController.dispose();
     _animationController.dispose();
     super.dispose();
   }
@@ -227,8 +247,13 @@ class _EditLoanScreenState extends State<EditLoanScreen>
           ? null
           : _descriptionController.text.trim();
 
-      final updatedLoan = Loan(
-        id: widget.loan.id,
+      double? interestRate;
+      if (_hasInterest) {
+        final rateText = _interestRateController.text.trim().replaceAll(',', '.');
+        interestRate = double.tryParse(rateText);
+      }
+
+      final updatedLoan = widget.loan.copyWith(
         personName: personName,
         personPhone: personPhone,
         amount: amountInVND,
@@ -242,11 +267,18 @@ class _EditLoanScreenState extends State<EditLoanScreen>
         reminderDays: _reminderEnabled ? _reminderDays : null,
         lastReminderSent: widget.loan.lastReminderSent,
         isOldDebt: _isOldDebt ? 1 : 0,
-        createdAt: widget.loan.createdAt,
+        hasInterest: _hasInterest,
+        interestRate: _hasInterest ? (interestRate ?? 0.0) : 0.0,
+        interestRateType: _hasInterest ? _interestRateType : 'percent_per_month',
+        interestCalculationType: _hasInterest ? _interestCalculationType : 'simple',
         updatedAt: DateTime.now(),
       );
 
       await _loanRepository.updateLoan(updatedLoan);
+
+      if (_hasInterest) {
+        await LoanInterestService().recalculateLoanInterest(updatedLoan);
+      }
 
       debugPrint('✅ Loan updated successfully: ${updatedLoan.id}');
 
@@ -347,6 +379,8 @@ class _EditLoanScreenState extends State<EditLoanScreen>
                   _buildDescriptionField(),
                   const SizedBox(height: 20),
                   _buildDateSelectors(),
+                  const SizedBox(height: 20),
+                  _buildInterestSettings(),
                   const SizedBox(height: 20),
                   _buildReminderSettings(),
                   const SizedBox(height: 20),
@@ -890,6 +924,306 @@ class _EditLoanScreenState extends State<EditLoanScreen>
               });
             },
           ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildQuickRateChip(String label, String value) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isSelected = _interestRateController.text == value;
+
+    return ActionChip(
+      label: Text(
+        label,
+        style: TextStyle(
+          fontSize: 12,
+          fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+          color: isSelected ? Colors.amber.shade900 : colorScheme.onSurface,
+        ),
+      ),
+      backgroundColor: isSelected ? Colors.amber.withValues(alpha: 0.25) : colorScheme.surface,
+      side: BorderSide(
+        color: isSelected ? Colors.amber : colorScheme.outline.withValues(alpha: 0.3),
+        width: isSelected ? 1.5 : 1,
+      ),
+      onPressed: () {
+        setState(() {
+          _interestRateController.text = value;
+        });
+      },
+    );
+  }
+
+  Widget _buildInterestSettings() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    // Tính thử tiền lãi dự kiến nếu người dùng đã nhập số tiền
+    final enteredAmount = CurrencyFormatter.parseAmount(_amountController.text);
+    final enteredRate = double.tryParse(_interestRateController.text.replaceAll(',', '.')) ?? 0.0;
+
+    double sampleDailyInterest = 0.0;
+    if (enteredAmount > 0 && enteredRate > 0) {
+      if (_interestRateType == 'vnd_per_million_per_day') {
+        sampleDailyInterest = (enteredAmount / 1000000.0) * enteredRate;
+      } else if (_interestRateType == 'percent_per_month') {
+        sampleDailyInterest = enteredAmount * (enteredRate / 100.0) / 30.0;
+      } else if (_interestRateType == 'percent_per_year') {
+        sampleDailyInterest = enteredAmount * (enteredRate / 100.0) / 365.0;
+      } else {
+        sampleDailyInterest = enteredAmount * (enteredRate / 100.0);
+      }
+    }
+    final sampleMonthlyInterest = sampleDailyInterest * 30.0;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              Container(
+                padding: const EdgeInsets.all(8),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Icon(Icons.percent, color: Colors.amber, size: 20),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Tính lãi suất',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.bold,
+                        color: colorScheme.onSurface,
+                      ),
+                    ),
+                    Text(
+                      'Tự động tính và cập nhật mỗi khi vào app',
+                      style: TextStyle(
+                        fontSize: 12,
+                        color: colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              Switch(
+                value: _hasInterest,
+                activeColor: Colors.amber,
+                onChanged: (val) {
+                  setState(() {
+                    _hasInterest = val;
+                  });
+                },
+              ),
+            ],
+          ),
+          if (_hasInterest) ...[
+            const SizedBox(height: 16),
+            const Divider(),
+            const SizedBox(height: 12),
+
+            // Dropdown chọn đơn vị tính lãi
+            Text(
+              'Hình thức tính lãi',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14),
+              decoration: BoxDecoration(
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(color: colorScheme.outline.withValues(alpha: 0.5)),
+                color: colorScheme.surface,
+              ),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String>(
+                  value: _interestRateType,
+                  isExpanded: true,
+                  items: const [
+                    DropdownMenuItem(
+                      value: 'vnd_per_million_per_day',
+                      child: Text('Đồng / triệu / ngày (Dân gian phổ biến)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'percent_per_month',
+                      child: Text('% / tháng (Vay bạn bè, tư nhân)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'percent_per_year',
+                      child: Text('% / năm (Ngân hàng, tài chính)'),
+                    ),
+                    DropdownMenuItem(
+                      value: 'percent_per_day',
+                      child: Text('% / ngày'),
+                    ),
+                  ],
+                  onChanged: (val) {
+                    if (val != null) {
+                      setState(() {
+                        _interestRateType = val;
+                        if (val == 'vnd_per_million_per_day' && (_interestRateController.text.isEmpty || _interestRateController.text == '1.5')) {
+                          _interestRateController.text = '2000';
+                        } else if (val == 'percent_per_month' && (_interestRateController.text.isEmpty || _interestRateController.text == '2000')) {
+                          _interestRateController.text = '1.5';
+                        } else if (val == 'percent_per_year' && (_interestRateController.text.isEmpty || _interestRateController.text == '2000')) {
+                          _interestRateController.text = '12';
+                        }
+                      });
+                    }
+                  },
+                ),
+              ),
+            ),
+
+            const SizedBox(height: 14),
+
+            // Input mức lãi suất
+            Text(
+              _interestRateType == 'vnd_per_million_per_day'
+                  ? 'Mức tiền lãi (đồng / 1 triệu / ngày)'
+                  : 'Mức lãi suất (%)',
+              style: TextStyle(
+                fontSize: 13,
+                fontWeight: FontWeight.w600,
+                color: colorScheme.onSurfaceVariant,
+              ),
+            ),
+            const SizedBox(height: 8),
+            TextFormField(
+              controller: _interestRateController,
+              keyboardType: const TextInputType.numberWithOptions(decimal: true),
+              onChanged: (_) => setState(() {}),
+              decoration: InputDecoration(
+                hintText: _interestRateType == 'vnd_per_million_per_day' ? 'VD: 2000 (tức 2k/tr/ngày)' : 'VD: 1.5 hoặc 2',
+                hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+                prefixIcon: const Icon(Icons.attach_money, color: Colors.amber),
+                suffixText: _interestRateType == 'vnd_per_million_per_day'
+                    ? 'đ / tr / ngày'
+                    : (_interestRateType == 'percent_per_month' ? '% / tháng' : (_interestRateType == 'percent_per_year' ? '% / năm' : '% / ngày')),
+                border: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.5)),
+                ),
+                focusedBorder: OutlineInputBorder(
+                  borderRadius: BorderRadius.circular(12),
+                  borderSide: const BorderSide(color: Colors.amber, width: 2),
+                ),
+                filled: true,
+                fillColor: colorScheme.surface,
+              ),
+            ),
+
+            const SizedBox(height: 10),
+
+            // Gợi ý mức lãi suất thông dụng
+            Wrap(
+              spacing: 8,
+              children: [
+                if (_interestRateType == 'vnd_per_million_per_day') ...[
+                  _buildQuickRateChip('1.000đ', '1000'),
+                  _buildQuickRateChip('2.000đ', '2000'),
+                  _buildQuickRateChip('3.000đ', '3000'),
+                  _buildQuickRateChip('5.000đ', '5000'),
+                ] else if (_interestRateType == 'percent_per_month') ...[
+                  _buildQuickRateChip('1%/tháng', '1'),
+                  _buildQuickRateChip('1.5%/tháng', '1.5'),
+                  _buildQuickRateChip('2%/tháng', '2'),
+                  _buildQuickRateChip('3%/tháng', '3'),
+                ] else ...[
+                  _buildQuickRateChip('8%/năm', '8'),
+                  _buildQuickRateChip('10%/năm', '10'),
+                  _buildQuickRateChip('12%/năm', '12'),
+                ],
+              ],
+            ),
+
+            // Thẻ preview tiền lãi ước tính
+            if (enteredAmount > 0 && sampleDailyInterest > 0) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.amber.withValues(alpha: 0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.amber.withValues(alpha: 0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.calculate_outlined, color: Colors.amber, size: 20),
+                    const SizedBox(width: 10),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Ước tính tiền lãi:',
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          const SizedBox(height: 2),
+                          Text(
+                            '~${CurrencyFormatter.formatAmount(sampleDailyInterest)}/ngày (${CurrencyFormatter.formatAmount(sampleMonthlyInterest)}/tháng)',
+                            style: const TextStyle(
+                              fontSize: 13,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.amber,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 12),
+
+            // Lãi kép / Nhập gốc
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Nhập lãi vào gốc (Lãi kép)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.w600)),
+              subtitle: Text(
+                'Lãi chưa trả sau mỗi chu kỳ tháng sẽ cộng dồn vào nợ gốc để tính lãi tiếp',
+                style: TextStyle(fontSize: 11, color: colorScheme.onSurfaceVariant),
+              ),
+              value: _interestCalculationType == 'compound',
+              activeColor: Colors.amber,
+              onChanged: (val) {
+                setState(() {
+                  _interestCalculationType = val ? 'compound' : 'simple';
+                });
+              },
+            ),
+          ],
         ],
       ),
     );

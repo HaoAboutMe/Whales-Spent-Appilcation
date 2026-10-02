@@ -123,14 +123,11 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
               // Cảnh báo ngân sách
               if (_alerts.isNotEmpty) _buildAlertsSection(),
 
-              // Phân cụm hành vi (K-means)
-              if (_cluster != null) _buildClusterSection(),
+              // Hồ sơ tài chính & Phân tích thói quen
+              if (_habit != null) _buildHabitAnalysis(),
 
               // Phân tích theo thời gian trong ngày
               if (_timeBasedData.isNotEmpty) _buildTimeBasedSection(),
-
-              // Phân tích thói quen
-              if (_habit != null) _buildHabitAnalysis(),
 
               const SizedBox(height: 100),
             ],
@@ -231,59 +228,75 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
             const SizedBox(height: 24),
 
             // Số tiền dự đoán
-            Text(
-              CurrencyFormatter.formatAmount(prediction.predictedAmount),
-              style: const TextStyle(
-                color: Colors.white,
-                fontSize: 36,
-                fontWeight: FontWeight.bold,
+            FittedBox(
+              alignment: Alignment.centerLeft,
+              fit: BoxFit.scaleDown,
+              child: Text(
+                CurrencyFormatter.formatAmount(prediction.predictedAmount),
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 34,
+                  fontWeight: FontWeight.bold,
+                ),
               ),
             ),
-            const SizedBox(height: 8),
+            if (prediction.lowerBound != null && prediction.upperBound != null && prediction.predictedAmount > 0) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Khoảng ước tính: ${CurrencyFormatter.formatAmount(prediction.lowerBound!)} ~ ${CurrencyFormatter.formatAmount(prediction.upperBound!)}',
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.85),
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ],
+            const SizedBox(height: 12),
 
             // Xu hướng và độ tin cậy
-            Row(
+            Wrap(
+              spacing: 8,
+              runSpacing: 8,
               children: [
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: trendColor.withValues(alpha: 0.3),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(16),
                     border: Border.all(color: Colors.white.withValues(alpha: 0.3)),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      Icon(trendIcon, color: Colors.white, size: 16),
-                      const SizedBox(width: 6),
+                      Icon(trendIcon, color: Colors.white, size: 14),
+                      const SizedBox(width: 4),
                       Text(
                         '$trendText ${prediction.changeRate.abs().toStringAsFixed(1)}%',
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
                     ],
                   ),
                 ),
-                const SizedBox(width: 12),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
                   decoration: BoxDecoration(
                     color: Colors.white.withValues(alpha: 0.2),
-                    borderRadius: BorderRadius.circular(20),
+                    borderRadius: BorderRadius.circular(16),
                   ),
                   child: Row(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Icon(Icons.check_circle, color: Colors.white, size: 16),
-                      const SizedBox(width: 6),
+                      const Icon(Icons.check_circle, color: Colors.white, size: 14),
+                      const SizedBox(width: 4),
                       Text(
                         'Độ tin cậy ${(prediction.confidence * 100).toStringAsFixed(0)}%',
                         style: const TextStyle(
                           color: Colors.white,
-                          fontSize: 13,
+                          fontSize: 12,
                           fontWeight: FontWeight.w600,
                         ),
                       ),
@@ -292,7 +305,61 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 16),
+
+            // Thẻ dự phóng tiến độ tháng hiện tại (Current Month Run-rate)
+            if (prediction.currentMonthProjected != null && prediction.currentMonthSpentSoFar != null) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.15),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      children: [
+                        const Icon(Icons.timelapse, color: Colors.white, size: 16),
+                        const SizedBox(width: 6),
+                        Text(
+                          'Dự phóng tháng này (${prediction.daysElapsedInCurrentMonth ?? 0}/${prediction.totalDaysInCurrentMonth ?? 30} ngày):',
+                          style: TextStyle(
+                            color: Colors.white.withValues(alpha: 0.85),
+                            fontSize: 12,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 6),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          'Đã chi: ${CurrencyFormatter.formatAmount(prediction.currentMonthSpentSoFar!)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.w600,
+                          ),
+                        ),
+                        Text(
+                          'Dự kiến cả tháng: ~${CurrencyFormatter.formatAmount(prediction.currentMonthProjected!)}',
+                          style: const TextStyle(
+                            color: Colors.white,
+                            fontSize: 13,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+
+            const SizedBox(height: 14),
 
             // Mô tả
             Container(
@@ -303,14 +370,14 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
               ),
               child: Row(
                 children: [
-                  Icon(Icons.info_outline, color: Colors.white.withValues(alpha: 0.8), size: 20),
-                  const SizedBox(width: 10),
+                  Icon(Icons.info_outline, color: Colors.white.withValues(alpha: 0.8), size: 18),
+                  const SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                      'Dự đoán dựa trên phân tích chi tiêu các tháng trước bằng thuật toán Linear Regression',
+                      'Dự báo thông minh kết hợp Trung bình động có trọng số (WMA) & Xu hướng tuyến tính.',
                       style: TextStyle(
                         color: Colors.white.withValues(alpha: 0.9),
-                        fontSize: 13,
+                        fontSize: 12,
                       ),
                     ),
                   ),
@@ -325,9 +392,63 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
 
   // ==================== TREND CHART ====================
 
+  String _formatYAxisLabel(double value) {
+    if (value <= 0) return '0';
+    if (value >= 1000000000) {
+      return '${(value / 1000000000).toStringAsFixed(1)}B';
+    }
+    if (value >= 1000000) {
+      final m = value / 1000000;
+      return m == m.roundToDouble() ? '${m.toInt()}M' : '${m.toStringAsFixed(1)}M';
+    }
+    if (value >= 1000) {
+      final k = value / 1000;
+      return k == k.roundToDouble() ? '${k.toInt()}k' : '${k.toStringAsFixed(1)}k';
+    }
+    return value.toStringAsFixed(0);
+  }
+
   Widget _buildTrendChart() {
     final theme = Theme.of(context);
     final isDark = theme.brightness == Brightness.dark;
+
+    if (_chartData.isEmpty) return const SizedBox.shrink();
+
+    // Tính toán min / max an toàn cho trục Y để không bao giờ bị cắt vát
+    double maxVal = 0.0;
+    for (var item in _chartData) {
+      if (item.actualAmount > maxVal) maxVal = item.actualAmount;
+      if ((item.predictedAmount ?? 0) > maxVal) maxVal = item.predictedAmount!;
+    }
+    if (maxVal <= 0) maxVal = 100000.0;
+    final maxY = maxVal * 1.25;
+    final horizontalInterval = (maxY / 4).clamp(1.0, double.infinity);
+    final maxX = (_chartData.length - 1).toDouble().clamp(1.0, double.infinity);
+
+    // Tách các điểm thực tế
+    final actualSpots = _chartData
+        .asMap()
+        .entries
+        .where((e) => e.value.isActual)
+        .map((e) => FlSpot(e.key.toDouble(), e.value.actualAmount))
+        .toList();
+
+    // Điểm bắt đầu của dự đoán là điểm thực tế cuối cùng
+    final lastActualEntry = _chartData
+        .asMap()
+        .entries
+        .lastWhere((e) => e.value.isActual, orElse: () => _chartData.asMap().entries.first);
+
+    final forecastEntries = _chartData
+        .asMap()
+        .entries
+        .where((e) => !e.value.isActual)
+        .toList();
+
+    final forecastSpots = [
+      FlSpot(lastActualEntry.key.toDouble(), lastActualEntry.value.actualAmount),
+      ...forecastEntries.map((e) => FlSpot(e.key.toDouble(), e.value.predictedAmount ?? 0)),
+    ];
 
     return Container(
       margin: const EdgeInsets.all(16),
@@ -368,10 +489,15 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
             height: (MediaQuery.of(context).size.height * 0.32).clamp(200.0, 320.0),
             child: LineChart(
               LineChartData(
+                clipData: const FlClipData.all(),
+                minY: 0,
+                maxY: maxY,
+                minX: 0,
+                maxX: maxX,
                 gridData: FlGridData(
                   show: true,
                   drawVerticalLine: false,
-                  horizontalInterval: 1000000,
+                  horizontalInterval: horizontalInterval,
                   getDrawingHorizontalLine: (value) {
                     return FlLine(
                       color: isDark
@@ -385,13 +511,14 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
                   leftTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      reservedSize: 50,
+                      reservedSize: 48,
+                      interval: horizontalInterval,
                       getTitlesWidget: (value, meta) {
                         return Text(
-                          '${(value / 1000000).toStringAsFixed(1)}M',
+                          _formatYAxisLabel(value),
                           style: TextStyle(
                             color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                            fontSize: 11,
+                            fontSize: 10,
                           ),
                         );
                       },
@@ -400,16 +527,24 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
                   bottomTitles: AxisTitles(
                     sideTitles: SideTitles(
                       showTitles: true,
-                      reservedSize: 30,
+                      reservedSize: 32,
+                      interval: 1.0,
                       getTitlesWidget: (value, meta) {
-                        final index = value.toInt();
+                        final index = value.round();
                         if (index >= 0 && index < _chartData.length) {
-                          final month = _chartData[index].month;
-                          return Text(
-                            'T${month.month}',
-                            style: TextStyle(
-                              color: theme.colorScheme.onSurface.withValues(alpha: 0.6),
-                              fontSize: 11,
+                          final data = _chartData[index];
+                          final isForecast = !data.isActual;
+                          return Padding(
+                            padding: const EdgeInsets.only(top: 6),
+                            child: Text(
+                              isForecast ? 'Dự kiến' : 'T${data.month.month}',
+                              style: TextStyle(
+                                color: isForecast
+                                    ? Colors.orange
+                                    : theme.colorScheme.onSurface.withValues(alpha: 0.7),
+                                fontSize: 11,
+                                fontWeight: isForecast ? FontWeight.bold : FontWeight.w500,
+                              ),
                             ),
                           );
                         }
@@ -428,13 +563,9 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
                 lineBarsData: [
                   // Line cho dữ liệu thực tế
                   LineChartBarData(
-                    spots: _chartData
-                        .asMap()
-                        .entries
-                        .where((e) => e.value.isActual)
-                        .map((e) => FlSpot(e.key.toDouble(), e.value.actualAmount))
-                        .toList(),
-                    isCurved: true,
+                    spots: actualSpots,
+                    isCurved: actualSpots.length > 1,
+                    preventCurveOverShooting: true,
                     color: theme.colorScheme.primary,
                     barWidth: 3,
                     isStrokeCapRound: true,
@@ -454,44 +585,43 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
                       color: theme.colorScheme.primary.withValues(alpha: 0.1),
                     ),
                   ),
-                  // Line cho dự đoán
-                  LineChartBarData(
-                    spots: _chartData
-                        .asMap()
-                        .entries
-                        .where((e) => !e.value.isActual || e.key == _chartData.length - 2)
-                        .map((e) {
-                      final amount = e.value.isActual
-                          ? e.value.actualAmount
-                          : (e.value.predictedAmount ?? 0);
-                      return FlSpot(e.key.toDouble(), amount);
-                    })
-                        .toList(),
-                    isCurved: true,
-                    color: Colors.orange,
-                    barWidth: 3,
-                    isStrokeCapRound: true,
-                    dashArray: [5, 5],
-                    dotData: FlDotData(
-                      show: true,
-                      getDotPainter: (spot, percent, barData, index) {
-                        return FlDotCirclePainter(
-                          radius: 4,
-                          color: Colors.orange,
-                          strokeWidth: 2,
-                          strokeColor: theme.colorScheme.surface,
-                        );
-                      },
+                  // Line cho dự đoán (nối liền mạch từ tháng hiện tại sang dự đoán)
+                  if (forecastSpots.length > 1)
+                    LineChartBarData(
+                      spots: forecastSpots,
+                      isCurved: true,
+                      preventCurveOverShooting: true,
+                      color: Colors.orange,
+                      barWidth: 3,
+                      isStrokeCapRound: true,
+                      dashArray: [5, 5],
+                      dotData: FlDotData(
+                        show: true,
+                        getDotPainter: (spot, percent, barData, index) {
+                          return FlDotCirclePainter(
+                            radius: 4,
+                            color: Colors.orange,
+                            strokeWidth: 2,
+                            strokeColor: theme.colorScheme.surface,
+                          );
+                        },
+                      ),
                     ),
-                  ),
                 ],
                 lineTouchData: LineTouchData(
                   enabled: true,
                   touchTooltipData: LineTouchTooltipData(
                     getTooltipItems: (touchedSpots) {
                       return touchedSpots.map((spot) {
+                        final idx = spot.x.round();
+                        String label = '';
+                        if (idx >= 0 && idx < _chartData.length) {
+                          label = _chartData[idx].isActual
+                              ? 'Thực tế T${_chartData[idx].month.month}: '
+                              : 'Dự kiến T${_chartData[idx].month.month}: ';
+                        }
                         return LineTooltipItem(
-                          CurrencyFormatter.formatAmount(spot.y),
+                          '$label${CurrencyFormatter.formatAmount(spot.y)}',
                           const TextStyle(color: Colors.white, fontSize: 12),
                         );
                       }).toList();
@@ -510,7 +640,7 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
             children: [
               _buildLegendItem('Thực tế', theme.colorScheme.primary, false),
               const SizedBox(width: 20),
-              _buildLegendItem('Dự đoán', Colors.orange, true),
+              _buildLegendItem('Dự kiến tháng tới', Colors.orange, true),
             ],
           ),
         ],
@@ -789,59 +919,109 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
           Row(
             children: [
               Icon(
-                Icons.lightbulb,
+                Icons.psychology_alt,
                 color: Colors.amber[700],
                 size: 24,
               ),
               const SizedBox(width: 12),
               Text(
-                'Phân tích thói quen',
+                'Hồ sơ & Thói quen chi tiêu',
                 style: theme.textTheme.titleMedium?.copyWith(
                   fontWeight: FontWeight.bold,
                 ),
               ),
             ],
           ),
-          const SizedBox(height: 20),
+          const SizedBox(height: 16),
 
-          // Spending style badge
+          // Spending style badge with description
           Container(
             padding: const EdgeInsets.all(16),
             decoration: BoxDecoration(
               color: styleColor.withValues(alpha: 0.1),
-              borderRadius: BorderRadius.circular(12),
+              borderRadius: BorderRadius.circular(16),
               border: Border.all(
-                color: theme.colorScheme.outline.withValues(alpha: 0.3),
+                color: styleColor.withValues(alpha: 0.3),
                 width: 1.2,
               ),
             ),
-            child: Row(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Icon(styleIcon, color: styleColor, size: 32),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Phong cách chi tiêu',
-                        style: theme.textTheme.bodySmall?.copyWith(
-                          color: theme.colorScheme.onSurfaceVariant,
-                        ),
+                Row(
+                  children: [
+                    Icon(styleIcon, color: styleColor, size: 30),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'Phong cách chi tiêu',
+                            style: theme.textTheme.bodySmall?.copyWith(
+                              color: theme.colorScheme.onSurfaceVariant,
+                            ),
+                          ),
+                          Text(
+                            habit.spendingStyle,
+                            style: theme.textTheme.titleMedium?.copyWith(
+                              fontWeight: FontWeight.bold,
+                              color: styleColor,
+                            ),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        habit.spendingStyle,
-                        style: theme.textTheme.titleMedium?.copyWith(
-                          fontWeight: FontWeight.bold,
-                          color: styleColor,
-                        ),
-                      ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+                if (_cluster?.description != null && _cluster!.description.isNotEmpty) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    _cluster!.description,
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: theme.colorScheme.onSurface.withValues(alpha: 0.8),
+                      height: 1.35,
+                    ),
+                  ),
+                ],
               ],
             ),
+          ),
+          const SizedBox(height: 16),
+
+          // 3 thông số tài chính chính
+          Row(
+            children: [
+              Expanded(
+                child: _buildCompactInsightCard(
+                  icon: Icons.percent,
+                  label: 'Tỉ lệ chi/thu',
+                  value: _cluster != null && _cluster!.spendingToIncomeRatio > 0
+                      ? '${(_cluster!.spendingToIncomeRatio * 100).toStringAsFixed(0)}%'
+                      : '—',
+                  color: Colors.purpleAccent,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildCompactInsightCard(
+                  icon: Icons.today,
+                  label: 'Chi TB/ngày',
+                  value: CurrencyFormatter.formatAmount(habit.avgDailySpending),
+                  color: Colors.blueAccent,
+                ),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: _buildCompactInsightCard(
+                  icon: Icons.diamond_outlined,
+                  label: 'Giao dịch lớn',
+                  value: '${_cluster?.highValueTransactionCount ?? 0} lần',
+                  color: Colors.amber,
+                ),
+              ),
+            ],
           ),
           const SizedBox(height: 20),
 
@@ -980,8 +1160,6 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
   Widget _buildDayChip(String day) {
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-
 
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -1064,177 +1242,7 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
   }
 
 
-  // ==================== CLUSTER SECTION (K-MEANS) ====================
 
-  Widget _buildClusterSection() {
-    final theme = Theme.of(context);
-    final cluster = _cluster!;
-
-    // Icon và màu theo cluster
-    IconData clusterIcon;
-    Color clusterColor;
-
-    switch (cluster.clusterName) {
-      case 'Tiết kiệm':
-        clusterIcon = Icons.savings;
-        clusterColor = Colors.green;
-        break;
-      case 'Thoải mái':
-        clusterIcon = Icons.shopping_bag;
-        clusterColor = Colors.orange;
-        break;
-      default:
-        clusterIcon = Icons.balance;
-        clusterColor = Colors.blue;
-    }
-
-    final colorScheme = theme.colorScheme;
-    final isDark = theme.brightness == Brightness.dark;
-
-    return Container(
-      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-      padding: const EdgeInsets.all(20),
-      decoration: BoxDecoration(
-        color: theme.colorScheme.surface,
-        borderRadius: BorderRadius.circular(20),
-        boxShadow: [
-          BoxShadow(
-            color: theme.colorScheme.shadow.withValues(alpha: 0.1),
-            blurRadius: 10,
-            offset: const Offset(0, 4),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.center,
-        mainAxisSize: MainAxisSize.max,
-        children: [
-          Row(
-            children: [
-              Icon(
-                Icons.groups,
-                color: colorScheme.primary,
-                size: 24,
-              ),
-              const SizedBox(width: 12),
-              Text(
-                'Phân loại hành vi',
-                style: theme.textTheme.titleMedium?.copyWith(
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-
-          // Cluster badge lớn
-          Container(
-            padding: const EdgeInsets.all(20),
-            decoration: BoxDecoration(
-              gradient: LinearGradient(
-                colors: [
-                  clusterColor.withValues(alpha: 0.2),
-                  clusterColor.withValues(alpha: 0.1),
-                ],
-                begin: Alignment.topLeft,
-                end: Alignment.bottomRight,
-              ),
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(
-                color: clusterColor.withValues(alpha: 0.3),
-                width: 2,
-              ),
-            ),
-            child: Column(
-              children: [
-                Icon(clusterIcon, color: clusterColor, size: 48),
-                const SizedBox(height: 12),
-                Text(
-                  cluster.clusterName,
-                  style: theme.textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.bold,
-                    color: clusterColor,
-                  ),
-                ),
-                const SizedBox(height: 8),
-                Text(
-                  cluster.description,
-                  textAlign: TextAlign.center,
-                  softWrap: true,
-                  maxLines: null,
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 16),
-
-          // Stats
-          Container(
-            padding: const EdgeInsets.all(16),
-            decoration: BoxDecoration(
-              color: theme.colorScheme.surfaceContainerHighest.withValues(alpha: 0.3),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Column(
-              children: [
-                _buildStatRow(
-                  icon: Icons.trending_up,
-                  label: 'Chi TB/tháng',
-                  value: CurrencyFormatter.formatAmount(cluster.avgMonthlySpending),
-                  color: Colors.blue,
-                ),
-                const Divider(height: 20),
-                _buildStatRow(
-                  icon: Icons.percent,
-                  label: 'Tỉ lệ chi/thu',
-                  value: '${(cluster.spendingToIncomeRatio * 100).toStringAsFixed(0)}%',
-                  color: Colors.purple,
-                ),
-                const Divider(height: 20),
-                _buildStatRow(
-                  icon: Icons.diamond,
-                  label: 'Giao dịch >500k',
-                  value: '${cluster.highValueTransactionCount} lần',
-                  color: Colors.amber,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildStatRow({
-    required IconData icon,
-    required String label,
-    required String value,
-    required Color color,
-  }) {
-    final theme = Theme.of(context);
-    return Row(
-      children: [
-        Icon(icon, color: color, size: 20),
-        const SizedBox(width: 12),
-        Expanded(
-          child: Text(
-            label,
-            style: theme.textTheme.bodyMedium,
-          ),
-        ),
-        Text(
-          value,
-          style: theme.textTheme.bodyMedium?.copyWith(
-            fontWeight: FontWeight.bold,
-            color: color,
-          ),
-        ),
-      ],
-    );
-  }
 
   // ==================== TIME BASED SECTION ====================
 

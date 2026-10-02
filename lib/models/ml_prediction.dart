@@ -15,12 +15,36 @@ class SpendingPrediction {
   /// Tốc độ thay đổi (% so với tháng trước)
   final double changeRate;
 
+  /// Khoảng dự báo tối thiểu (Lower Bound)
+  final double? lowerBound;
+
+  /// Khoảng dự báo tối đa (Upper Bound)
+  final double? upperBound;
+
+  /// Dự phóng chi tiêu hết tháng hiện tại
+  final double? currentMonthProjected;
+
+  /// Chi tiêu thực tế đã ghi nhận trong tháng hiện tại tính đến nay
+  final double? currentMonthSpentSoFar;
+
+  /// Số ngày đã qua trong tháng hiện tại
+  final int? daysElapsedInCurrentMonth;
+
+  /// Tổng số ngày trong tháng hiện tại
+  final int? totalDaysInCurrentMonth;
+
   const SpendingPrediction({
     required this.month,
     required this.predictedAmount,
     required this.confidence,
     required this.trend,
     required this.changeRate,
+    this.lowerBound,
+    this.upperBound,
+    this.currentMonthProjected,
+    this.currentMonthSpentSoFar,
+    this.daysElapsedInCurrentMonth,
+    this.totalDaysInCurrentMonth,
   });
 
   Map<String, dynamic> toMap() {
@@ -30,6 +54,12 @@ class SpendingPrediction {
       'confidence': confidence,
       'trend': trend,
       'changeRate': changeRate,
+      'lowerBound': lowerBound,
+      'upperBound': upperBound,
+      'currentMonthProjected': currentMonthProjected,
+      'currentMonthSpentSoFar': currentMonthSpentSoFar,
+      'daysElapsedInCurrentMonth': daysElapsedInCurrentMonth,
+      'totalDaysInCurrentMonth': totalDaysInCurrentMonth,
     };
   }
 
@@ -40,6 +70,12 @@ class SpendingPrediction {
       confidence: (map['confidence'] as num).toDouble(),
       trend: map['trend'] as String,
       changeRate: (map['changeRate'] as num).toDouble(),
+      lowerBound: (map['lowerBound'] as num?)?.toDouble(),
+      upperBound: (map['upperBound'] as num?)?.toDouble(),
+      currentMonthProjected: (map['currentMonthProjected'] as num?)?.toDouble(),
+      currentMonthSpentSoFar: (map['currentMonthSpentSoFar'] as num?)?.toDouble(),
+      daysElapsedInCurrentMonth: map['daysElapsedInCurrentMonth'] as int?,
+      totalDaysInCurrentMonth: map['totalDaysInCurrentMonth'] as int?,
     );
   }
 }

@@ -96,13 +96,42 @@ class LoanCardWidget extends StatelessWidget {
                         ),
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        _getLoanTypeText(),
-                        style: TextStyle(
-                          fontSize: 12,
-                          color: loanColor,
-                          fontWeight: FontWeight.w500,
-                        ),
+                      Row(
+                        children: [
+                          Text(
+                            _getLoanTypeText(),
+                            style: TextStyle(
+                              fontSize: 12,
+                              color: loanColor,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          if (loan.hasInterest) ...[
+                            const SizedBox(width: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 6,
+                                vertical: 1.5,
+                              ),
+                              decoration: BoxDecoration(
+                                color: Colors.amber.withValues(alpha: 0.15),
+                                borderRadius: BorderRadius.circular(4),
+                                border: Border.all(
+                                  color: Colors.amber.withValues(alpha: 0.4),
+                                  width: 0.8,
+                                ),
+                              ),
+                              child: Text(
+                                loan.interestRateDescription,
+                                style: const TextStyle(
+                                  fontSize: 10,
+                                  color: Colors.amber,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ],
                       ),
                       const SizedBox(height: 4),
                       Row(
@@ -142,7 +171,7 @@ class LoanCardWidget extends StatelessWidget {
                         ],
                       ),
                       // Show payment progress if there's any payment
-                      if (loan.amountPaid > 0 && loan.status != 'completed' && loan.status != 'paid') ...[
+                      if ((loan.amountPaid > 0 || loan.interestPaid > 0) && loan.status != 'completed' && loan.status != 'paid') ...[
                         const SizedBox(height: 8),
                         Row(
                           children: [
@@ -178,13 +207,28 @@ class LoanCardWidget extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      CurrencyFormatter.formatAmount(loan.amount),
+                      CurrencyFormatter.formatAmount(
+                        (loan.status == 'completed' || loan.status == 'paid')
+                            ? (loan.hasInterest ? (loan.amount + loan.accruedInterest) : loan.amount)
+                            : (loan.hasInterest ? loan.totalDebtAmount : loan.remainingPrincipal),
+                      ),
                       style: TextStyle(
                         fontSize: 16,
                         fontWeight: FontWeight.bold,
                         color: loanColor,
                       ),
                     ),
+                    if (loan.hasInterest && loan.remainingInterest > 0 && loan.status != 'completed' && loan.status != 'paid') ...[
+                      const SizedBox(height: 2),
+                      Text(
+                        '+Lãi: ${CurrencyFormatter.formatAmount(loan.remainingInterest)}',
+                        style: const TextStyle(
+                          fontSize: 11,
+                          color: Colors.amber,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
                     if (loan.dueDate != null) ...[
                       const SizedBox(height: 4),
                       Text(

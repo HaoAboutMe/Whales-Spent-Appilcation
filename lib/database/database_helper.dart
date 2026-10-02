@@ -33,7 +33,7 @@ class DatabaseHelper {
 
   // Thông tin database
   static const String _databaseName = 'expense_tracker.db';
-  static const int _databaseVersion = 5;
+  static const int _databaseVersion = 6;
 
   // Tên các bảng
   static const String _tableUsers = 'users';
@@ -42,6 +42,7 @@ class DatabaseHelper {
   static const String _tableLoans = 'loans';
   static const String _tableNotifications = 'notifications';
   static const String _tableBudgets = 'budgets';
+  static const String _tableLoanPayments = 'loan_payments';
 
   // Cột của bảng users
   static const String _colUserId = 'id';
@@ -85,8 +86,28 @@ class DatabaseHelper {
   static const String _colLoanLastReminderSent = 'lastReminderSent';
   static const String _colLoanIsOldDebt = 'isOldDebt';
   static const String _colLoanAmountPaid = 'amountPaid';
+  static const String _colLoanHasInterest = 'hasInterest';
+  static const String _colLoanInterestRate = 'interestRate';
+  static const String _colLoanInterestRateType = 'interestRateType';
+  static const String _colLoanInterestCalculationType = 'interestCalculationType';
+  static const String _colLoanInterestPeriod = 'interestPeriod';
+  static const String _colLoanAccruedInterest = 'accruedInterest';
+  static const String _colLoanInterestPaid = 'interestPaid';
+  static const String _colLoanLastInterestCalculatedDate = 'lastInterestCalculatedDate';
+  static const String _colLoanOverdueInterestMultiplier = 'overdueInterestMultiplier';
   static const String _colLoanCreatedAt = 'createdAt';
   static const String _colLoanUpdatedAt = 'updatedAt';
+
+  // Cột của bảng loan_payments
+  static const String _colLoanPaymentId = 'id';
+  static const String _colLoanPaymentLoanId = 'loanId';
+  static const String _colLoanPaymentDate = 'paymentDate';
+  static const String _colLoanPaymentTotalAmount = 'totalAmount';
+  static const String _colLoanPaymentPrincipalPaid = 'principalPaid';
+  static const String _colLoanPaymentInterestPaid = 'interestPaid';
+  static const String _colLoanPaymentRemainingPrincipalAfter = 'remainingPrincipalAfter';
+  static const String _colLoanPaymentNotes = 'notes';
+  static const String _colLoanPaymentCreatedAt = 'createdAt';
 
   // Cột của bảng notifications
   static const String _colNotificationId = 'id';
@@ -181,8 +202,33 @@ class DatabaseHelper {
           $_colLoanLastReminderSent TEXT,
           $_colLoanIsOldDebt INTEGER NOT NULL DEFAULT 0 CHECK ($_colLoanIsOldDebt IN (0, 1)),
           $_colLoanAmountPaid REAL NOT NULL DEFAULT 0 CHECK ($_colLoanAmountPaid >= 0),
+          $_colLoanHasInterest INTEGER NOT NULL DEFAULT 0 CHECK ($_colLoanHasInterest IN (0, 1)),
+          $_colLoanInterestRate REAL DEFAULT 0,
+          $_colLoanInterestRateType TEXT DEFAULT 'percent_per_month',
+          $_colLoanInterestCalculationType TEXT DEFAULT 'simple',
+          $_colLoanInterestPeriod TEXT DEFAULT 'monthly',
+          $_colLoanAccruedInterest REAL NOT NULL DEFAULT 0,
+          $_colLoanInterestPaid REAL NOT NULL DEFAULT 0,
+          $_colLoanLastInterestCalculatedDate TEXT,
+          $_colLoanOverdueInterestMultiplier REAL DEFAULT 1.0,
           $_colLoanCreatedAt TEXT NOT NULL,
           $_colLoanUpdatedAt TEXT NOT NULL
+        )
+      ''');
+
+      // Tạo bảng loan_payments
+      await db.execute('''
+        CREATE TABLE $_tableLoanPayments (
+          $_colLoanPaymentId INTEGER PRIMARY KEY AUTOINCREMENT,
+          $_colLoanPaymentLoanId INTEGER NOT NULL,
+          $_colLoanPaymentDate TEXT NOT NULL,
+          $_colLoanPaymentTotalAmount REAL NOT NULL CHECK ($_colLoanPaymentTotalAmount > 0),
+          $_colLoanPaymentPrincipalPaid REAL NOT NULL DEFAULT 0,
+          $_colLoanPaymentInterestPaid REAL NOT NULL DEFAULT 0,
+          $_colLoanPaymentRemainingPrincipalAfter REAL NOT NULL DEFAULT 0,
+          $_colLoanPaymentNotes TEXT,
+          $_colLoanPaymentCreatedAt TEXT NOT NULL,
+          FOREIGN KEY ($_colLoanPaymentLoanId) REFERENCES $_tableLoans ($_colLoanId) ON DELETE CASCADE
         )
       ''');
 
@@ -276,6 +322,11 @@ class DatabaseHelper {
         ON $_tableBudgets ($_colBudgetCategoryId)
       ''');
 
+      await db.execute('''
+        CREATE INDEX idx_loan_payments_loan_id 
+        ON $_tableLoanPayments ($_colLoanPaymentLoanId)
+      ''');
+
       log('Tạo indexes thành công');
     } catch (e) {
       log('Lỗi tạo indexes: $e');
@@ -360,6 +411,42 @@ class DatabaseHelper {
           ADD COLUMN $_colLoanAmountPaid REAL NOT NULL DEFAULT 0 CHECK ($_colLoanAmountPaid >= 0)
         ''');
         log('Đã thêm cột amountPaid vào bảng loans để hỗ trợ partial payment');
+      }
+
+      if (oldVersion < 6) {
+        // Thêm các cột lãi suất vào bảng loans
+        await db.execute('ALTER TABLE $_tableLoans ADD COLUMN $_colLoanHasInterest INTEGER NOT NULL DEFAULT 0');
+        await db.execute('ALTER TABLE $_tableLoans ADD COLUMN $_colLoanInterestRate REAL DEFAULT 0');
+        await db.execute("ALTER TABLE $_tableLoans ADD COLUMN $_colLoanInterestRateType TEXT DEFAULT 'percent_per_month'");
+        await db.execute("ALTER TABLE $_tableLoans ADD COLUMN $_colLoanInterestCalculationType TEXT DEFAULT 'simple'");
+        await db.execute("ALTER TABLE $_tableLoans ADD COLUMN $_colLoanInterestPeriod TEXT DEFAULT 'monthly'");
+        await db.execute('ALTER TABLE $_tableLoans ADD COLUMN $_colLoanAccruedInterest REAL NOT NULL DEFAULT 0');
+        await db.execute('ALTER TABLE $_tableLoans ADD COLUMN $_colLoanInterestPaid REAL NOT NULL DEFAULT 0');
+        await db.execute('ALTER TABLE $_tableLoans ADD COLUMN $_colLoanLastInterestCalculatedDate TEXT');
+        await db.execute('ALTER TABLE $_tableLoans ADD COLUMN $_colLoanOverdueInterestMultiplier REAL DEFAULT 1.0');
+
+        // Tạo bảng loan_payments
+        await db.execute('''
+          CREATE TABLE $_tableLoanPayments (
+            $_colLoanPaymentId INTEGER PRIMARY KEY AUTOINCREMENT,
+            $_colLoanPaymentLoanId INTEGER NOT NULL,
+            $_colLoanPaymentDate TEXT NOT NULL,
+            $_colLoanPaymentTotalAmount REAL NOT NULL CHECK ($_colLoanPaymentTotalAmount > 0),
+            $_colLoanPaymentPrincipalPaid REAL NOT NULL DEFAULT 0,
+            $_colLoanPaymentInterestPaid REAL NOT NULL DEFAULT 0,
+            $_colLoanPaymentRemainingPrincipalAfter REAL NOT NULL DEFAULT 0,
+            $_colLoanPaymentNotes TEXT,
+            $_colLoanPaymentCreatedAt TEXT NOT NULL,
+            FOREIGN KEY ($_colLoanPaymentLoanId) REFERENCES $_tableLoans ($_colLoanId) ON DELETE CASCADE
+          )
+        ''');
+
+        await db.execute('''
+          CREATE INDEX idx_loan_payments_loan_id 
+          ON $_tableLoanPayments ($_colLoanPaymentLoanId)
+        ''');
+
+        log('Đã nâng cấp database lên phiên bản 6: Bổ sung tính năng lãi suất và bảng loan_payments');
       }
 
       log('Nâng cấp database thành công đến phiên bản $newVersion');

@@ -1,10 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../../models/loan.dart';
+import '../../models/loan_payment.dart';
 import '../../models/transaction.dart' as transaction_model;
 import '../../utils/currency_formatter.dart';
 import '../../database/repositories/repositories.dart';
 import '../../providers/notification_provider.dart';
+import '../../services/loan_interest_service.dart';
 import 'edit_loan_screen.dart';
 import 'partial_payment_screen.dart';
 import '../main_navigation_wrapper.dart';
@@ -28,6 +30,7 @@ class LoanDetailScreen extends StatefulWidget {
 class _LoanDetailScreenState extends State<LoanDetailScreen> {
   final LoanRepository _loanRepository = LoanRepository();
   Loan? _loan;
+  List<LoanPayment> _paymentHistory = [];
   bool _isLoading = true;
   bool _dataWasModified = false; // Track if loan was edited/deleted
 
@@ -53,8 +56,14 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
         loadedLoan = await _loanRepository.getLoanById(widget.loanId);
       }
 
+      List<LoanPayment> loadedPayments = [];
+      if (loadedLoan != null && loadedLoan.id != null) {
+        loadedPayments = await LoanInterestService().getPaymentHistory(loadedLoan.id!);
+      }
+
       setState(() {
         _loan = loadedLoan;
+        _paymentHistory = loadedPayments;
         _isLoading = false;
       });
     } catch (e) {
@@ -319,6 +328,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
     // Show confirmation dialog
     final theme = Theme.of(context);
     final colorScheme = theme.colorScheme;
+    final totalPayAmount = _loan!.hasInterest ? _loan!.totalDebtAmount : _loan!.remainingAmount;
 
     final confirmed = await showDialog<bool>(
       context: context,
@@ -326,7 +336,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
         backgroundColor: colorScheme.surfaceContainerHighest,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
         title: Text(
-          '💰 Xác nhận thanh toán',
+          '💰 Xác nhận tất toán',
           style: TextStyle(
             color: colorScheme.onSurface,
             fontWeight: FontWeight.bold,
@@ -339,11 +349,11 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
           children: [
             Text(
               _loan!.loanType == 'lend'
-                  ? 'Xác nhận rằng ${_loan!.personName} đã trả nợ?'
-                  : 'Xác nhận rằng bạn đã trả nợ cho ${_loan!.personName}?',
+                  ? 'Xác nhận rằng ${_loan!.personName} đã tất toán toàn bộ khoản vay?'
+                  : 'Xác nhận rằng bạn đã tất toán toàn bộ khoản nợ cho ${_loan!.personName}?',
               style: TextStyle(
                 color: colorScheme.onSurfaceVariant,
-                fontSize: 16,
+                fontSize: 15,
               ),
             ),
             const SizedBox(height: 16),
@@ -353,30 +363,46 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
                 color: _getLoanColor().withValues(alpha: 0.1),
                 borderRadius: BorderRadius.circular(8),
               ),
-              child: Row(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Icon(
-                    Icons.attach_money,
-                    color: _getLoanColor(),
-                    size: 20,
+                  Row(
+                    children: [
+                      Icon(
+                        Icons.attach_money,
+                        color: _getLoanColor(),
+                        size: 20,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Tổng tất toán: ${CurrencyFormatter.formatAmount(totalPayAmount)}',
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.bold,
+                          color: _getLoanColor(),
+                        ),
+                      ),
+                    ],
                   ),
-                  const SizedBox(width: 8),
-                  Text(
-                    'Số tiền: ${CurrencyFormatter.formatAmount(_loan!.amount)}',
-                    style: TextStyle(
-                      fontSize: 14,
-                      fontWeight: FontWeight.bold,
-                      color: _getLoanColor(),
+                  if (_loan!.hasInterest && _loan!.remainingInterest > 0) ...[
+                    const SizedBox(height: 6),
+                    Text(
+                      '• Nợ gốc còn lại: ${CurrencyFormatter.formatAmount(_loan!.remainingPrincipal)}',
+                      style: TextStyle(fontSize: 12, color: colorScheme.onSurfaceVariant),
                     ),
-                  ),
+                    Text(
+                      '• Tiền lãi phát sinh: ${CurrencyFormatter.formatAmount(_loan!.remainingInterest)}',
+                      style: const TextStyle(fontSize: 12, color: Colors.amber, fontWeight: FontWeight.w600),
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 12),
             Text(
               _loan!.loanType == 'lend'
-                  ? '✅ Số dư sẽ được cộng thêm ${CurrencyFormatter.formatAmount(_loan!.amount)}'
-                  : '⚠️ Số dư sẽ bị trừ ${CurrencyFormatter.formatAmount(_loan!.amount)}',
+                  ? '✅ Số dư sẽ được cộng thêm ${CurrencyFormatter.formatAmount(totalPayAmount)}'
+                  : '⚠️ Số dư sẽ bị trừ ${CurrencyFormatter.formatAmount(totalPayAmount)}',
               style: TextStyle(
                 fontSize: 12,
                 color: colorScheme.onSurfaceVariant,
@@ -403,7 +429,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
               ),
             ),
             child: const Text(
-              'Xác nhận',
+              'Xác nhận tất toán',
               style: TextStyle(fontWeight: FontWeight.bold),
             ),
           ),
@@ -427,7 +453,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
               children: [
                 CircularProgressIndicator(),
                 SizedBox(height: 16),
-                Text('Đang xử lý...'),
+                Text('Đang xử lý tất toán...'),
               ],
             ),
           ),
@@ -436,27 +462,15 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
     );
 
     try {
-      // Create payment transaction
-      final transactionType = _loan!.loanType == 'lend' ? 'debt_collected' : 'debt_paid';
       final description = _loan!.loanType == 'lend'
-          ? 'Thu hồi nợ từ ${_loan!.personName}'
-          : 'Trả nợ cho ${_loan!.personName}';
+          ? 'Tất toán toàn bộ khoản cho vay từ ${_loan!.personName}'
+          : 'Tất toán toàn bộ khoản nợ cho ${_loan!.personName}';
 
-      final paymentTransaction = transaction_model.Transaction(
-        amount: _loan!.amount,
-        description: description,
-        date: DateTime.now(),
-        categoryId: null,
-        loanId: _loan!.id,
-        type: transactionType,
-        createdAt: DateTime.now(),
-        updatedAt: DateTime.now(),
-      );
-
-      // Mark loan as paid
-      await _loanRepository.markLoanAsPaid(
+      // Mark loan as fully paid via makePartialPayment
+      await _loanRepository.makePartialPayment(
         loanId: _loan!.id!,
-        paymentTransaction: paymentTransaction,
+        paymentAmount: totalPayAmount,
+        description: description,
       );
 
       debugPrint('✅ Loan marked as paid successfully');
@@ -645,6 +659,107 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
     );
   }
 
+  Widget _buildPaymentHistorySection() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    if (_paymentHistory.isEmpty) return const SizedBox.shrink();
+
+    return _buildSection(
+      title: 'Lịch sử thanh toán (${_paymentHistory.length})',
+      titleIcon: Icons.history,
+      children: [
+        ..._paymentHistory.map((payment) {
+          final isLend = _loan?.loanType == 'lend';
+          return Container(
+            margin: const EdgeInsets.only(bottom: 12),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: colorScheme.surfaceContainerHighest.withValues(alpha: 0.4),
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: colorScheme.outline.withValues(alpha: 0.15)),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    Row(
+                      children: [
+                        Icon(
+                          isLend ? Icons.arrow_downward : Icons.arrow_upward,
+                          size: 16,
+                          color: const Color(0xFF4CAF50),
+                        ),
+                        const SizedBox(width: 6),
+                        Text(
+                          '${payment.paymentDate.day.toString().padLeft(2, '0')}/${payment.paymentDate.month.toString().padLeft(2, '0')}/${payment.paymentDate.year} ${payment.paymentDate.hour.toString().padLeft(2, '0')}:${payment.paymentDate.minute.toString().padLeft(2, '0')}',
+                          style: TextStyle(
+                            fontSize: 12,
+                            fontWeight: FontWeight.w600,
+                            color: colorScheme.onSurfaceVariant,
+                          ),
+                        ),
+                      ],
+                    ),
+                    Text(
+                      CurrencyFormatter.formatAmount(payment.totalAmount),
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Color(0xFF4CAF50),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Row(
+                  children: [
+                    Text(
+                      'Trừ gốc: ${CurrencyFormatter.formatAmount(payment.principalPaid)}',
+                      style: TextStyle(fontSize: 12, color: colorScheme.onSurface),
+                    ),
+                    if (payment.interestPaid > 0) ...[
+                      const SizedBox(width: 8),
+                      Text(
+                        '• Trừ lãi: ${CurrencyFormatter.formatAmount(payment.interestPaid)}',
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Colors.amber,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 2),
+                Text(
+                  'Nợ gốc sau trả: ${CurrencyFormatter.formatAmount(payment.remainingPrincipalAfter)}',
+                  style: TextStyle(
+                    fontSize: 11,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ),
+                if (payment.notes != null && payment.notes!.isNotEmpty) ...[
+                  const SizedBox(height: 4),
+                  Text(
+                    payment.notes!,
+                    style: TextStyle(
+                      fontSize: 11,
+                      fontStyle: FontStyle.italic,
+                      color: colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          );
+        }),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
@@ -816,44 +931,92 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              CurrencyFormatter.formatAmount(_loan!.amount),
+                              CurrencyFormatter.formatAmount(
+                                (_loan!.status == 'completed' || _loan!.status == 'paid')
+                                    ? (_loan!.hasInterest ? (_loan!.amount + _loan!.accruedInterest) : _loan!.amount)
+                                    : (_loan!.hasInterest ? _loan!.totalDebtAmount : _loan!.remainingPrincipal),
+                              ),
                               style: const TextStyle(
                                 color: Colors.white,
                                 fontSize: 32,
                                 fontWeight: FontWeight.bold,
                               ),
                             ),
+                            if (_loan!.hasInterest) ...[
+                              const SizedBox(height: 4),
+                              Text(
+                                (_loan!.status == 'completed' || _loan!.status == 'paid')
+                                    ? 'Đã tất toán (Gốc: ${CurrencyFormatter.formatAmount(_loan!.amount)} + Lãi: ${CurrencyFormatter.formatAmount(_loan!.accruedInterest)})'
+                                    : 'Tổng dư nợ (Gốc: ${CurrencyFormatter.formatAmount(_loan!.remainingPrincipal)} + Lãi: ${CurrencyFormatter.formatAmount(_loan!.remainingInterest)})',
+                                style: TextStyle(
+                                  color: Colors.white.withValues(alpha: 0.9),
+                                  fontSize: 13,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                              ),
+                            ],
                             const SizedBox(height: 8),
-                            Container(
-                              padding: const EdgeInsets.symmetric(
-                                horizontal: 12,
-                                vertical: 6,
-                              ),
-                              decoration: BoxDecoration(
-                                color: Colors.white.withValues(alpha: 0.2),
-                                borderRadius: BorderRadius.circular(20),
-                              ),
-                              child: Row(
-                                mainAxisSize: MainAxisSize.min,
-                                children: [
-                                  Icon(
-                                    _loan!.loanType == 'lend'
-                                        ? Icons.arrow_upward_rounded
-                                        : Icons.arrow_downward_rounded,
-                                    color: Colors.white,
-                                    size: 16,
+                            Wrap(
+                              spacing: 8,
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.symmetric(
+                                    horizontal: 12,
+                                    vertical: 6,
                                   ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    _getTypeText(),
-                                    style: const TextStyle(
-                                      color: Colors.white,
-                                      fontSize: 14,
-                                      fontWeight: FontWeight.w600,
+                                  decoration: BoxDecoration(
+                                    color: Colors.white.withValues(alpha: 0.2),
+                                    borderRadius: BorderRadius.circular(20),
+                                  ),
+                                  child: Row(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      Icon(
+                                        _loan!.loanType == 'lend'
+                                            ? Icons.arrow_upward_rounded
+                                            : Icons.arrow_downward_rounded,
+                                        color: Colors.white,
+                                        size: 16,
+                                      ),
+                                      const SizedBox(width: 4),
+                                      Text(
+                                        _getTypeText(),
+                                        style: const TextStyle(
+                                          color: Colors.white,
+                                          fontSize: 14,
+                                          fontWeight: FontWeight.w600,
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                                if (_loan!.hasInterest)
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(
+                                      horizontal: 12,
+                                      vertical: 6,
+                                    ),
+                                    decoration: BoxDecoration(
+                                      color: Colors.amber.withValues(alpha: 0.9),
+                                      borderRadius: BorderRadius.circular(20),
+                                    ),
+                                    child: Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        const Icon(Icons.percent, color: Colors.black87, size: 14),
+                                        const SizedBox(width: 4),
+                                        Text(
+                                          _loan!.interestRateDescription,
+                                          style: const TextStyle(
+                                            color: Colors.black87,
+                                            fontSize: 13,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ],
                                     ),
                                   ),
-                                ],
-                              ),
+                              ],
                             ),
                           ],
                         ),
@@ -881,6 +1044,68 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
                         ],
                       ),
 
+                      // Chi tiết lãi suất (nếu có tính lãi)
+                      if (_loan!.hasInterest)
+                        _buildSection(
+                          title: 'Chi tiết lãi suất',
+                          titleIcon: Icons.percent,
+                          children: [
+                            _buildInfoRow(
+                              icon: Icons.tune,
+                              label: 'Mức lãi suất',
+                              value: _loan!.interestRateDescription,
+                              valueColor: Colors.amber.shade800,
+                              valueStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.amber),
+                            ),
+                            _buildInfoRow(
+                              icon: Icons.calculate,
+                              label: 'Hình thức tính',
+                              value: _loan!.interestCalculationType == 'compound'
+                                  ? 'Lãi kép (nhập gốc)'
+                                  : 'Lãi đơn',
+                            ),
+                            _buildInfoRow(
+                              icon: Icons.trending_up,
+                              label: 'Tổng lãi tích lũy',
+                              value: CurrencyFormatter.formatAmount(_loan!.accruedInterest),
+                              valueStyle: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.amber),
+                            ),
+                            _buildInfoRow(
+                              icon: Icons.done_all,
+                              label: 'Tiền lãi đã trả',
+                              value: CurrencyFormatter.formatAmount(_loan!.interestPaid),
+                              valueColor: const Color(0xFF4CAF50),
+                            ),
+                            _buildInfoRow(
+                              icon: Icons.hourglass_bottom,
+                              label: 'Tiền lãi còn nợ',
+                              value: CurrencyFormatter.formatAmount(_loan!.remainingInterest),
+                              valueStyle: TextStyle(
+                                fontSize: 14,
+                                fontWeight: FontWeight.bold,
+                                color: _loan!.remainingInterest > 0 ? Colors.orange : colorScheme.onSurface,
+                              ),
+                            ),
+                            if (_loan!.lastInterestCalculatedDate != null)
+                              _buildInfoRow(
+                                icon: Icons.access_time,
+                                label: 'Lãi cập nhật lúc',
+                                value: '${_loan!.lastInterestCalculatedDate!.hour.toString().padLeft(2, '0')}:${_loan!.lastInterestCalculatedDate!.minute.toString().padLeft(2, '0')} - ${_loan!.lastInterestCalculatedDate!.day}/${_loan!.lastInterestCalculatedDate!.month}/${_loan!.lastInterestCalculatedDate!.year}',
+                              ),
+                            const Divider(height: 20),
+                            _buildInfoRow(
+                              icon: Icons.price_check,
+                              label: 'Tổng dư nợ cần thanh toán',
+                              value: CurrencyFormatter.formatAmount(_loan!.totalDebtAmount),
+                              valueStyle: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                color: _getLoanColor(),
+                              ),
+                            ),
+                          ],
+                        ),
+
                       // Thông tin khoản vay
                       _buildSection(
                         title: 'Thông tin khoản vay',
@@ -888,7 +1113,7 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
                         children: [
                           _buildInfoRow(
                             icon: Icons.attach_money,
-                            label: 'Số tiền',
+                            label: _loan!.hasInterest ? 'Nợ gốc ban đầu' : 'Số tiền',
                             value: CurrencyFormatter.formatAmount(_loan!.amount),
                             valueStyle: TextStyle(
                               fontSize: 18,
@@ -897,11 +1122,11 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
                             ),
                           ),
                           // Show partial payment progress if there's any payment
-                          if (_loan!.amountPaid > 0) ...[
+                          if (_loan!.amountPaid > 0 || _loan!.interestPaid > 0) ...[
                             const SizedBox(height: 12),
                             _buildInfoRow(
                               icon: Icons.payments,
-                              label: 'Đã trả',
+                              label: _loan!.hasInterest ? 'Gốc đã trả' : 'Đã trả',
                               value: CurrencyFormatter.formatAmount(_loan!.amountPaid),
                               valueStyle: const TextStyle(
                                 fontSize: 16,
@@ -912,8 +1137,8 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
                             const SizedBox(height: 8),
                             _buildInfoRow(
                               icon: Icons.pending_actions,
-                              label: 'Còn lại',
-                              value: CurrencyFormatter.formatAmount(_loan!.remainingAmount),
+                              label: _loan!.hasInterest ? 'Gốc còn lại' : 'Còn lại',
+                              value: CurrencyFormatter.formatAmount(_loan!.remainingPrincipal),
                               valueStyle: const TextStyle(
                                 fontSize: 16,
                                 fontWeight: FontWeight.bold,
@@ -985,6 +1210,9 @@ class _LoanDetailScreenState extends State<LoanDetailScreen> {
                           ),
                         ],
                       ),
+
+                      // Lịch sử thanh toán
+                      _buildPaymentHistorySection(),
 
                       // Thông tin bổ sung (nếu có)
                       if (_loan!.description != null && _loan!.description!.isNotEmpty ||

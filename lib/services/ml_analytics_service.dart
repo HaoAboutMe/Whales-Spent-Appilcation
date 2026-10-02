@@ -12,55 +12,137 @@ class MLAnalyticsService {
 
   // ==================== DỰ ĐOÁN CHI TIÊU ====================
 
-  /// Dự đoán chi tiêu tháng tới sử dụng Linear Regression đơn giản
+  /// Dự đoán chi tiêu tháng tới sử dụng kết hợp Weighted Moving Average và Linear Trend
   Future<SpendingPrediction> predictNextMonthSpending({
     required DateTime currentMonth,
     int monthsToAnalyze = 6,
   }) async {
     try {
-      // Lấy dữ liệu chi tiêu các tháng trước
-      final monthlyData = await _getMonthlySpendingHistory(
+      final now = DateTime.now();
+      final totalDaysInCurrentMonth = DateTime(currentMonth.year, currentMonth.month + 1, 0).day;
+
+      // Tính số ngày đã trôi qua trong tháng khảo sát
+      final isCurrentCalendarMonth = (now.year == currentMonth.year && now.month == currentMonth.month);
+      final daysElapsed = isCurrentCalendarMonth
+          ? math.max(1, math.min(now.day, totalDaysInCurrentMonth))
+          : totalDaysInCurrentMonth;
+
+      // 1. Lấy chi tiêu thực tế đã phát sinh trong tháng hiện tại tính đến nay
+      final currentMonthStart = DateTime(currentMonth.year, currentMonth.month, 1);
+      final currentMonthEnd = DateTime(currentMonth.year, currentMonth.month + 1, 0, 23, 59, 59);
+      final currentMonthTxs = await _transactionRepo.getTransactionsByDateRange(currentMonthStart, currentMonthEnd);
+      final currentMonthSpentSoFar = currentMonthTxs
+          .where((t) => t.type == 'expense')
+          .fold(0.0, (sum, t) => sum + t.amount);
+
+      // Dự phóng chi tiêu hết tháng hiện tại (Current Month Run-rate Projection)
+      final currentMonthDailyAvg = daysElapsed > 0 ? (currentMonthSpentSoFar / daysElapsed) : 0.0;
+      final rawCurrentMonthProjected = isCurrentCalendarMonth
+          ? (currentMonthDailyAvg * totalDaysInCurrentMonth)
+          : currentMonthSpentSoFar;
+      final currentMonthProjected = _roundToVndThousand(rawCurrentMonthProjected);
+
+      // 2. Lấy dữ liệu các tháng trước ĐÃ HOÀN CHỈNH (không gom tháng dở dang vào chuỗi quá khứ)
+      final completedHistory = await _getCompletedMonthlySpendingHistory(
         currentMonth: currentMonth,
         monthsBack: monthsToAnalyze,
       );
 
-      if (monthlyData.isEmpty) {
+      final nextMonth = DateTime(currentMonth.year, currentMonth.month + 1);
+
+      // Trường hợp 1: Không có dữ liệu lịch sử và tháng này cũng chưa chi gì
+      if (completedHistory.isEmpty && currentMonthSpentSoFar == 0) {
         return SpendingPrediction(
-          month: _formatMonth(DateTime(currentMonth.year, currentMonth.month + 1)),
+          month: _formatMonth(nextMonth),
           predictedAmount: 0,
           confidence: 0,
           trend: 'stable',
           changeRate: 0,
+          lowerBound: 0,
+          upperBound: 0,
+          currentMonthProjected: 0,
+          currentMonthSpentSoFar: 0,
+          daysElapsedInCurrentMonth: daysElapsed,
+          totalDaysInCurrentMonth: totalDaysInCurrentMonth,
         );
       }
 
-      // Nếu chỉ có 1 tháng dữ liệu, dùng trung bình đơn giản
-      if (monthlyData.length == 1) {
+      // Trường hợp 2: Người dùng mới (chưa có tháng hoàn chỉnh trước đó, chỉ có tháng này)
+      if (completedHistory.isEmpty) {
+        final predicted = _roundToVndThousand(currentMonthProjected);
+        final confidence = (daysElapsed / totalDaysInCurrentMonth * 0.5).clamp(0.2, 0.5);
+        final margin = predicted * 0.25;
+
         return SpendingPrediction(
-          month: _formatMonth(DateTime(currentMonth.year, currentMonth.month + 1)),
-          predictedAmount: monthlyData[0]['amount'] as double,
-          confidence: 0.5,
+          month: _formatMonth(nextMonth),
+          predictedAmount: predicted,
+          confidence: confidence,
           trend: 'stable',
           changeRate: 0,
+          lowerBound: _roundToVndThousand(math.max(0, predicted - margin)),
+          upperBound: _roundToVndThousand(predicted + margin),
+          currentMonthProjected: currentMonthProjected,
+          currentMonthSpentSoFar: currentMonthSpentSoFar,
+          daysElapsedInCurrentMonth: daysElapsed,
+          totalDaysInCurrentMonth: totalDaysInCurrentMonth,
         );
       }
 
-      // Áp dụng Linear Regression
-      final prediction = _linearRegression(monthlyData);
+      // Trường hợp 3: Có các tháng hoàn chỉnh trong quá khứ
+      final pastAmounts = completedHistory.map((e) => e['amount'] as double).toList();
 
-      // Tính xu hướng và tốc độ thay đổi
-      final trend = _calculateTrend(monthlyData);
-      final changeRate = _calculateChangeRate(monthlyData);
-      final confidence = _calculateConfidence(monthlyData);
+      // Tính Weighted Moving Average trên các tháng đã hoàn chỉnh (trọng số tăng dần về tháng gần nhất)
+      double wma = 0.0;
+      int weightSum = 0;
+      for (int i = 0; i < pastAmounts.length; i++) {
+        final weight = i + 1; // 1, 2, 3...
+        wma += pastAmounts[i] * weight;
+        weightSum += weight;
+      }
+      wma = weightSum > 0 ? (wma / weightSum) : pastAmounts.last;
 
-      final nextMonth = DateTime(currentMonth.year, currentMonth.month + 1);
+      // Tính xu hướng Linear Trend trên toàn bộ chuỗi (kèm run-rate tháng này)
+      final allSeries = [...pastAmounts, currentMonthProjected];
+      final linearPrediction = _computeLinearForecast(allSeries);
+
+      // Kết hợp WMA và Linear Trend: 65% WMA + 35% Linear Forecast để tránh biến động sốc
+      double rawPrediction = (0.65 * wma + 0.35 * linearPrediction);
+      if (rawPrediction < 0) rawPrediction = wma;
+      final prediction = _roundToVndThousand(rawPrediction);
+
+      // Tính xu hướng (trend) và tốc độ thay đổi so với dự phóng tháng này
+      final baselineCompare = currentMonthProjected > 0 ? currentMonthProjected : wma;
+      final changeRate = baselineCompare > 0 ? ((prediction - baselineCompare) / baselineCompare) * 100 : 0.0;
+
+      String trend = 'stable';
+      if (changeRate > 5.0) {
+        trend = 'increasing';
+      } else if (changeRate < -5.0) {
+        trend = 'decreasing';
+      }
+
+      // Tính độ tin cậy dựa trên tính ổn định và số lượng dữ liệu
+      final confidence = _calculateConfidence(allSeries);
+
+      // Tính dải dao động kỳ vọng (Confidence Interval)
+      final uncertainty = (1.0 - confidence).clamp(0.1, 0.4);
+      final rawLower = math.max(0.0, prediction * (1.0 - uncertainty * 0.7));
+      final rawUpper = prediction * (1.0 + uncertainty * 0.7);
+      final lowerBound = _roundToVndThousand(rawLower);
+      final upperBound = _roundToVndThousand(rawUpper);
 
       return SpendingPrediction(
         month: _formatMonth(nextMonth),
-        predictedAmount: math.max(0, prediction),
+        predictedAmount: prediction,
         confidence: confidence,
         trend: trend,
         changeRate: changeRate,
+        lowerBound: lowerBound,
+        upperBound: upperBound,
+        currentMonthProjected: currentMonthProjected,
+        currentMonthSpentSoFar: currentMonthSpentSoFar,
+        daysElapsedInCurrentMonth: daysElapsed,
+        totalDaysInCurrentMonth: totalDaysInCurrentMonth,
       );
     } catch (e) {
       log('Lỗi dự đoán chi tiêu: $e');
@@ -68,107 +150,65 @@ class MLAnalyticsService {
     }
   }
 
-  /// Linear Regression đơn giản
-  double _linearRegression(List<Map<String, dynamic>> data) {
-    final n = data.length;
+  /// Tính dự báo tuyến tính an toàn chống chia cho 0
+  double _computeLinearForecast(List<double> y) {
+    final n = y.length;
+    if (n < 2) return y.isNotEmpty ? y.last : 0.0;
 
-    // Chuẩn bị dữ liệu: x = tháng (0, 1, 2...), y = chi tiêu
     final x = List.generate(n, (i) => i.toDouble());
-    final y = data.map((e) => e['amount'] as double).toList();
-
-    // Tính các giá trị cần thiết
     final sumX = x.reduce((a, b) => a + b);
     final sumY = y.reduce((a, b) => a + b);
     final sumXY = List.generate(n, (i) => x[i] * y[i]).reduce((a, b) => a + b);
     final sumX2 = x.map((e) => e * e).reduce((a, b) => a + b);
 
-    // Tính slope (độ dốc) và intercept
-    final slope = (n * sumXY - sumX * sumY) / (n * sumX2 - sumX * sumX);
-    final intercept = (sumY - slope * sumX) / n;
-
-    // Dự đoán cho tháng tiếp theo
-    final nextX = n.toDouble();
-    final prediction = slope * nextX + intercept;
-
-    // Áp dụng Exponential Smoothing để làm mượt
-    final lastActual = y.last;
-    final alpha = 0.3; // Hệ số smoothing
-    final smoothedPrediction = alpha * prediction + (1 - alpha) * lastActual;
-
-    return smoothedPrediction;
-  }
-
-
-  /// Tính xu hướng (trend)
-  String _calculateTrend(List<Map<String, dynamic>> data) {
-    if (data.length < 2) return 'stable';
-
-    final amounts = data.map((e) => e['amount'] as double).toList();
-    final recent = amounts.sublist(math.max(0, amounts.length - 3));
-
-    if (recent.length < 2) return 'stable';
-
-    var increasing = 0;
-    var decreasing = 0;
-
-    for (var i = 1; i < recent.length; i++) {
-      if (recent[i] > recent[i - 1] * 1.05) increasing++;
-      if (recent[i] < recent[i - 1] * 0.95) decreasing++;
+    final denom = n * sumX2 - sumX * sumX;
+    if (denom.abs() < 1e-6) {
+      return sumY / n;
     }
 
-    if (increasing > decreasing) return 'increasing';
-    if (decreasing > increasing) return 'decreasing';
-    return 'stable';
-  }
+    final slope = (n * sumXY - sumX * sumY) / denom;
+    final intercept = (sumY - slope * sumX) / n;
 
-  /// Tính tốc độ thay đổi (%)
-  double _calculateChangeRate(List<Map<String, dynamic>> data) {
-    if (data.length < 2) return 0;
-
-    final amounts = data.map((e) => e['amount'] as double).toList();
-    final last = amounts.last;
-    final previous = amounts[amounts.length - 2];
-
-    if (previous == 0) return 0;
-
-    return ((last - previous) / previous) * 100;
+    final forecast = slope * n.toDouble() + intercept;
+    return math.max(0.0, forecast);
   }
 
   /// Tính độ tin cậy của dự đoán
-  double _calculateConfidence(List<Map<String, dynamic>> data) {
-    if (data.length < 3) return 0.5;
+  double _calculateConfidence(List<double> amounts) {
+    if (amounts.length < 2) return 0.4;
 
-    final amounts = data.map((e) => e['amount'] as double).toList();
-
-    // Tính độ lệch chuẩn
     final mean = amounts.reduce((a, b) => a + b) / amounts.length;
+    if (mean <= 0) return 0.3;
+
     final variance = amounts.map((e) => math.pow(e - mean, 2)).reduce((a, b) => a + b) / amounts.length;
     final stdDev = math.sqrt(variance);
 
     // Coefficient of Variation
-    final cv = mean > 0 ? stdDev / mean : 1.0;
+    final cv = stdDev / mean;
+
+    // Nhiều dữ liệu thì tăng thêm độ tin cậy
+    final dataPointsBonus = math.min(0.2, (amounts.length - 2) * 0.05);
 
     // Độ tin cậy cao khi CV thấp (dữ liệu ổn định)
-    final confidence = math.max(0.3, math.min(0.95, 1.0 - cv));
+    final baseConfidence = (1.0 - math.min(0.7, cv * 0.8)).clamp(0.35, 0.85);
 
-    return confidence.toDouble();
+    return (baseConfidence + dataPointsBonus).clamp(0.3, 0.95);
   }
 
-  /// Lấy lịch sử chi tiêu theo tháng
-  Future<List<Map<String, dynamic>>> _getMonthlySpendingHistory({
+  /// Lấy lịch sử chi tiêu các tháng trước ĐÃ HOÀN CHỈNH
+  Future<List<Map<String, dynamic>>> _getCompletedMonthlySpendingHistory({
     required DateTime currentMonth,
     required int monthsBack,
   }) async {
     final results = <Map<String, dynamic>>[];
 
-    for (var i = monthsBack - 1; i >= 0; i--) {
+    for (var i = monthsBack; i >= 1; i--) {
       final targetMonth = DateTime(currentMonth.year, currentMonth.month - i);
       final startDate = DateTime(targetMonth.year, targetMonth.month, 1);
       final endDate = DateTime(targetMonth.year, targetMonth.month + 1, 0, 23, 59, 59);
 
       final transactions = await _transactionRepo.getTransactionsByDateRange(startDate, endDate);
 
-      // Tính tổng chi tiêu (chỉ expense)
       final totalExpense = transactions
           .where((t) => t.type == 'expense')
           .fold(0.0, (sum, t) => sum + t.amount);
@@ -179,8 +219,18 @@ class MLAnalyticsService {
       });
     }
 
-    // Lọc bỏ các tháng không có dữ liệu
-    return results.where((e) => e['amount'] as double > 0).toList();
+    // Không cắt ngắn tháng 0đ nếu nằm giữa khoảng thời gian có giao dịch,
+    // chỉ lọc bỏ các tháng phía trước khi tài khoản chưa từng có bất kỳ giao dịch nào.
+    final allTxs = await _transactionRepo.getAllTransactions();
+    if (allTxs.isEmpty) return [];
+
+    final earliestDate = allTxs.map((t) => t.date).reduce((a, b) => a.isBefore(b) ? a : b);
+    final earliestMonth = DateTime(earliestDate.year, earliestDate.month);
+
+    return results.where((e) {
+      final m = e['month'] as DateTime;
+      return !m.isBefore(earliestMonth);
+    }).toList();
   }
 
   // ==================== PHÂN TÍCH THÓI QUEN ====================
@@ -194,6 +244,8 @@ class MLAnalyticsService {
 
     final transactions = await _transactionRepo.getTransactionsByDateRange(startDate, endDate);
     final expenses = transactions.where((t) => t.type == 'expense').toList();
+    final incomes = transactions.where((t) => t.type == 'income').toList();
+    final totalIncome = incomes.fold(0.0, (sum, t) => sum + t.amount);
 
     if (expenses.isEmpty) {
       return const SpendingHabit(
@@ -292,7 +344,7 @@ class MLAnalyticsService {
     final avgDailySpending = totalSpending / daysInMonth;
 
     // ===== XÁC ĐỊNH PHONG CÁCH CHI TIÊU =====
-    final spendingStyle = _determineSpendingStyle(expenses, currentMonth);
+    final spendingStyle = _determineSpendingStyle(expenses, totalIncome, currentMonth);
 
     return SpendingHabit(
       topSpendingDays: topSpendingDays,
@@ -303,24 +355,27 @@ class MLAnalyticsService {
     );
   }
 
-  /// Xác định phong cách chi tiêu
-  String _determineSpendingStyle(List<Transaction> expenses, DateTime month) {
+  /// Xác định phong cách chi tiêu dựa trên tỷ lệ chi tiêu/thu nhập hoặc mức độ chi tiêu
+  String _determineSpendingStyle(List<Transaction> expenses, double totalIncome, DateTime month) {
     if (expenses.isEmpty) return 'Chưa xác định';
 
     final totalSpending = expenses.fold(0.0, (sum, e) => sum + e.amount);
-    final avgTransaction = totalSpending / expenses.length;
 
-    // Lấy dữ liệu 3 tháng trước để so sánh
-    final previousMonths = <double>[];
-    for (var i = 1; i <= 3; i++) {
-      // Giả định logic để lấy dữ liệu các tháng trước (có thể cải thiện)
-      previousMonths.add(totalSpending); // Placeholder
+    if (totalIncome > 0) {
+      final ratio = totalSpending / totalIncome;
+      if (ratio < 0.6) {
+        return 'Tiết kiệm';
+      } else if (ratio > 0.85) {
+        return 'Thoải mái';
+      } else {
+        return 'Cân đối';
+      }
     }
 
-    // Phân loại dựa trên giao dịch trung bình và tần suất
-    if (avgTransaction < 100000 && expenses.length < 20) {
+    // Nếu chưa ghi nhận thu nhập: phân loại dựa trên tần suất giao dịch
+    if (expenses.length <= 15) {
       return 'Tiết kiệm';
-    } else if (avgTransaction > 500000 || expenses.length > 50) {
+    } else if (expenses.length >= 45) {
       return 'Thoải mái';
     } else {
       return 'Cân đối';
@@ -450,9 +505,9 @@ class MLAnalyticsService {
         final spendingRate = expectedUsage > 0 ? usedPercentage / expectedUsage : 0.0;
 
         // Dự đoán số tiền vượt nếu tiếp tục chi tiêu
-        final dailyAverage = daysElapsed > 0 ? spent / daysElapsed : 0;
-        final projectedTotal = dailyAverage * totalDays;
-        final projectedOverage = math.max(0.0, projectedTotal - budgetAmount);
+        final dailyAverage = daysElapsed > 0 ? (spent / daysElapsed) : 0.0;
+        final projectedTotal = _roundToVndThousand(dailyAverage * totalDays);
+        final projectedOverage = _roundToVndThousand(math.max(0.0, projectedTotal - budgetAmount));
 
         log('📋 [$categoryName] Budget: ${budgetAmount.toStringAsFixed(0)}, Spent: ${spent.toStringAsFixed(0)}');
         log('📅 Thời gian: ${startDate.day}/${startDate.month} - ${endDate.day}/${endDate.month} ($totalDays ngày)');
@@ -538,8 +593,9 @@ class MLAnalyticsService {
         final spendingRate = expectedUsage > 0 ? usedPercentage / expectedUsage : 0.0;
 
         // Dự đoán số tiền vượt nếu tiếp tục chi tiêu
-        final projectedTotal = daysElapsed > 0 ? (categorySpending / daysElapsed) * daysInMonth : categorySpending;
-        final projectedOverage = math.max(0.0, projectedTotal - budget);
+        final rawProjectedTotal = daysElapsed > 0 ? (categorySpending / daysElapsed) * daysInMonth : categorySpending;
+        final projectedTotal = _roundToVndThousand(rawProjectedTotal);
+        final projectedOverage = _roundToVndThousand(math.max(0.0, projectedTotal - budget));
 
         // Tạo cảnh báo nếu vượt hoặc có nguy cơ vượt
         String? severity;
@@ -616,7 +672,7 @@ class MLAnalyticsService {
 
       // Tính trung bình và thêm buffer 10%
       final avg3Months = monthlySpending.reduce((a, b) => a + b) / monthlySpending.length;
-      final suggestedBudget = (avg3Months * 1.1).roundToDouble(); // Thêm 10% buffer
+      final suggestedBudget = _roundToVndThousand(avg3Months * 1.1); // Thêm 10% buffer và làm tròn hàng nghìn VND
 
       final currentBudget = category.budget ?? 0;
 
@@ -792,20 +848,19 @@ class MLAnalyticsService {
       String clusterName;
       String description;
 
-      // Phân loại dựa trên 3 tiêu chí
-      if (ratio < 0.6 && avgSpending < 5000000) {
-        // Chi ít và tỉ lệ thấp
+      // Phân loại dựa trên tỷ lệ chi/thu và hành vi giao dịch lớn
+      if (ratio > 0 && ratio < 0.6) {
+        // Tỉ lệ chi/thu thấp dưới 60%
         clusterName = 'Tiết kiệm';
-        description = 'Bạn chi tiêu cẩn trọng và có kế hoạch tốt. '
-            '\nTỉ lệ chi/thu dưới 60%.';
-      } else if (ratio >= 0.9 || avgSpending > 10000000 || highValueCount > 15) {
-        // Chi nhiều hoặc tỉ lệ cao
+        description = 'Bạn chi tiêu cẩn trọng, tích lũy tốt với tỉ lệ chi/thu dưới 60%.';
+      } else if (ratio >= 0.85 || (avgSpending > 0 && highValueCount >= 8)) {
+        // Tỉ lệ chi/thu cao hoặc nhiều giao dịch vượt ngưỡng trung bình
         clusterName = 'Thoải mái';
-        description = 'Bạn chi tiêu thoải mái, có nhiều giao dịch giá trị cao. Cân nhắc tiết kiệm hơn.';
+        description = 'Bạn chi tiêu tương đối thoải mái. Nên theo dõi sát ngân sách để tối ưu tích lũy.';
       } else {
-        // Trung bình
+        // Cân đối
         clusterName = 'Cân đối';
-        description = 'Bạn có phong cách chi tiêu cân đối, vừa phải giữa tiết kiệm và thoải mái.';
+        description = 'Bạn có phong cách chi tiêu cân đối, hài hòa giữa chi tiêu sinh hoạt và tiết kiệm.';
       }
 
       return SpendingCluster(
@@ -851,8 +906,12 @@ class MLAnalyticsService {
           .where((t) => t.type == 'income')
           .fold(0.0, (sum, t) => sum + t.amount);
 
-      final highValue = transactions
-          .where((t) => t.type == 'expense' && t.amount > 500000)
+      final expensesList = transactions.where((t) => t.type == 'expense').toList();
+      final avgTx = expensesList.isNotEmpty ? (totalExpense / expensesList.length) : 0.0;
+      final dynamicThreshold = math.max(10.0, avgTx * 2.0);
+
+      final highValue = expensesList
+          .where((t) => t.amount >= dynamicThreshold)
           .length;
 
       if (totalExpense > 0) {
@@ -883,6 +942,13 @@ class MLAnalyticsService {
   }
 
   // ==================== HELPER METHODS ====================
+
+  /// Làm tròn số tiền về bội số của 1.000 VND vì tiền Việt Nam không lưu hành tiền lẻ dưới 1.000đ
+  double _roundToVndThousand(num amount) {
+    if (amount <= 0) return 0.0;
+    final rounded = (amount / 1000.0).round() * 1000.0;
+    return rounded > 0 ? rounded : 1000.0;
+  }
 
   String _formatMonth(DateTime date) {
     final months = ['', 'Tháng 1', 'Tháng 2', 'Tháng 3', 'Tháng 4', 'Tháng 5',

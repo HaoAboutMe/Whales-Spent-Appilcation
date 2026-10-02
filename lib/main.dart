@@ -8,6 +8,7 @@ import 'providers/theme_provider.dart';
 import 'providers/notification_provider.dart';
 import 'providers/currency_provider.dart';
 import 'services/notification_service.dart';
+import 'services/loan_interest_service.dart';
 import 'services/widget_service.dart';
 import 'database/repositories/repositories.dart';
 import 'screens/add_transaction/add_transaction_page.dart';
@@ -41,6 +42,14 @@ void main() async {
     debugPrint('✅ Loan reminders checked on startup');
   } catch (e) {
     debugPrint('❌ Error checking loan reminders: $e');
+  }
+
+  // ✅ TÍNH TOÁN LẠI LÃI SUẤT KHOẢN VAY KHI MỞ LẠI APP
+  try {
+    await LoanInterestService().syncAllActiveLoansInterest();
+    debugPrint('✅ Loan interest synchronized on startup');
+  } catch (e) {
+    debugPrint('❌ Error synchronizing loan interest on startup: $e');
   }
 
   // Initialize default categories if database is empty
