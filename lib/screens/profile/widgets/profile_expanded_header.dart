@@ -78,9 +78,11 @@ class ProfileExpandedHeader extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: isEditingName
-                  ? SizedBox(
-                width: 260,
-                child: TextField(
+                  ? ConstrainedBox(
+                      constraints: BoxConstraints(
+                        maxWidth: (MediaQuery.of(context).size.width * 0.75).clamp(200.0, 320.0),
+                      ),
+                      child: TextField(
                   controller: nameController,
                   textAlign: TextAlign.center,
                   autofocus: true,

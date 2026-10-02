@@ -829,111 +829,116 @@ class _LoanListScreenState extends State<LoanListScreen> with WidgetsBindingObse
             ),
           ),
 
-          // Filter Section - New Design with Two Separate Buttons
+          // Filter Section - Responsive Row with Two Separate Buttons
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-            child: Wrap(
-              spacing: 8,
-              runSpacing: 8,
-              alignment: WrapAlignment.spaceBetween,
+            child: Row(
               children: [
                 // Loan Filter Button (Status & Due Date)
-                Container(
-                  width: MediaQuery.of(context).size.width / 2 - 24,
-                  decoration: BoxDecoration(
-                    boxShadow: [
-                      BoxShadow(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.black.withValues(alpha: 0.25)
-                            : Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: OutlinedButton.icon(
-                    onPressed: _showLoanFilterSheet,
-                    icon: Icon(
-                      Icons.filter_list,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.primary,
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      boxShadow: [
+                        BoxShadow(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.black.withValues(alpha: 0.25)
+                              : Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    label: Text(
-                      'Lọc khoản vay',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                    child: OutlinedButton.icon(
+                      onPressed: _showLoanFilterSheet,
+                      icon: Icon(
+                        Icons.filter_list,
+                        size: 18,
                         color: Theme.of(context).colorScheme.primary,
                       ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      side: BorderSide(
-                        color: _filters.hasLoanFilters
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.outline,
-                        width: _filters.hasLoanFilters ? 2 : 1,
+                      label: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Lọc khoản vay',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
                       ),
-                      backgroundColor: _filters.hasLoanFilters
-                          ? Theme.of(context)
-                          .colorScheme
-                          .primaryContainer
-                          .withValues(alpha: 0.2)
-                          : Theme.of(context).colorScheme.surface,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        side: BorderSide(
+                          color: _filters.hasLoanFilters
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.outline,
+                          width: _filters.hasLoanFilters ? 2 : 1,
+                        ),
+                        backgroundColor: _filters.hasLoanFilters
+                            ? Theme.of(context)
+                            .colorScheme
+                            .primaryContainer
+                            .withValues(alpha: 0.2)
+                            : Theme.of(context).colorScheme.surface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                   ),
                 ),
-
+                const SizedBox(width: 12),
                 // Time Filter Button
-                Container(
-                  width: MediaQuery.of(context).size.width / 2 - 24,
-                  decoration: BoxDecoration(
-                    boxShadow: [
-                      BoxShadow(
-                        color: Theme.of(context).brightness == Brightness.dark
-                            ? Colors.black.withValues(alpha: 0.25)
-                            : Colors.black.withValues(alpha: 0.1),
-                        blurRadius: 6,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                    borderRadius: BorderRadius.circular(8),
-                  ),
-                  child: OutlinedButton.icon(
-                    onPressed: _showTimeFilterSheet,
-                    icon: Icon(
-                      Icons.access_time,
-                      size: 18,
-                      color: Theme.of(context).colorScheme.primary,
+                Expanded(
+                  child: Container(
+                    decoration: BoxDecoration(
+                      boxShadow: [
+                        BoxShadow(
+                          color: Theme.of(context).brightness == Brightness.dark
+                              ? Colors.black.withValues(alpha: 0.25)
+                              : Colors.black.withValues(alpha: 0.1),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                      borderRadius: BorderRadius.circular(8),
                     ),
-                    label: Text(
-                      'Thời gian',
-                      style: TextStyle(
-                        fontSize: 14,
-                        fontWeight: FontWeight.w600,
+                    child: OutlinedButton.icon(
+                      onPressed: _showTimeFilterSheet,
+                      icon: Icon(
+                        Icons.access_time,
+                        size: 18,
                         color: Theme.of(context).colorScheme.primary,
                       ),
-                    ),
-                    style: OutlinedButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
-                      side: BorderSide(
-                        color: _filters.hasTimeFilter
-                            ? Theme.of(context).colorScheme.primary
-                            : Theme.of(context).colorScheme.outline,
-                        width: _filters.hasTimeFilter ? 2 : 1,
+                      label: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          'Thời gian',
+                          style: TextStyle(
+                            fontSize: 14,
+                            fontWeight: FontWeight.w600,
+                            color: Theme.of(context).colorScheme.primary,
+                          ),
+                        ),
                       ),
-                      backgroundColor: _filters.hasTimeFilter
-                          ? Theme.of(context)
-                          .colorScheme
-                          .primaryContainer
-                          .withValues(alpha: 0.2)
-                          : Theme.of(context).colorScheme.surface,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(8),
+                      style: OutlinedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                        side: BorderSide(
+                          color: _filters.hasTimeFilter
+                              ? Theme.of(context).colorScheme.primary
+                              : Theme.of(context).colorScheme.outline,
+                          width: _filters.hasTimeFilter ? 2 : 1,
+                        ),
+                        backgroundColor: _filters.hasTimeFilter
+                            ? Theme.of(context)
+                            .colorScheme
+                            .primaryContainer
+                            .withValues(alpha: 0.2)
+                            : Theme.of(context).colorScheme.surface,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
                       ),
                     ),
                   ),

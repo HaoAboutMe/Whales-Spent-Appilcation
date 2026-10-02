@@ -365,7 +365,7 @@ class _SpendingPredictionScreenState extends State<SpendingPredictionScreen> {
           const SizedBox(height: 24),
 
           SizedBox(
-            height: 250,
+            height: (MediaQuery.of(context).size.height * 0.32).clamp(200.0, 320.0),
             child: LineChart(
               LineChartData(
                 gridData: FlGridData(

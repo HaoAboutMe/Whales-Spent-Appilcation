@@ -147,14 +147,19 @@ class _BalanceOverviewState extends State<BalanceOverview> {
     return Row(
       mainAxisAlignment: MainAxisAlignment.spaceBetween,
       children: [
-        Text(
-          'Tổng quan',
-          style: TextStyle(
-            fontSize: 18,
-            fontWeight: FontWeight.bold,
-            color: Theme.of(context).colorScheme.onSurface,
+        Expanded(
+          child: Text(
+            'Tổng quan',
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: Theme.of(context).colorScheme.onSurface,
+            ),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
           ),
         ),
+        const SizedBox(width: 8),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -264,14 +269,18 @@ class _BalanceOverviewState extends State<BalanceOverview> {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            widget.isBalanceVisible
-                ? CurrencyFormatter.formatAmount(widget.currentUser?.balance ?? 0)
-                : '••••••••',
-            style: TextStyle(
-              fontSize: 24,
-              fontWeight: FontWeight.bold,
-              color: Theme.of(context).colorScheme.primary,
+          FittedBox(
+            alignment: Alignment.centerLeft,
+            fit: BoxFit.scaleDown,
+            child: Text(
+              widget.isBalanceVisible
+                  ? CurrencyFormatter.formatAmount(widget.currentUser?.balance ?? 0)
+                  : '••••••••',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).colorScheme.primary,
+              ),
             ),
           ),
         ],
@@ -370,12 +379,16 @@ class _OverviewStatCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          Text(
-            isVisible ? CurrencyFormatter.formatAmount(amount) : '••••••',
-            style: TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: color,
+          FittedBox(
+            alignment: Alignment.centerLeft,
+            fit: BoxFit.scaleDown,
+            child: Text(
+              isVisible ? CurrencyFormatter.formatAmount(amount) : '••••••',
+              style: TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+                color: color,
+              ),
             ),
           ),
         ],

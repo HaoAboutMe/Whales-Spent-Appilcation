@@ -57,7 +57,7 @@ class ProfileFeatureGrid extends StatelessWidget {
           crossAxisCount: 3,
           crossAxisSpacing: 12,
           mainAxisSpacing: 12,
-          childAspectRatio: 1,
+          childAspectRatio: 0.88,
         ),
         itemCount: features.length,
         itemBuilder: (context, index) {

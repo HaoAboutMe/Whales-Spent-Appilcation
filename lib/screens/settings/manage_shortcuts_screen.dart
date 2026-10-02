@@ -543,7 +543,7 @@ class _ManageShortcutsScreenState extends State<ManageShortcutsScreen> {
                               ),
                               const SizedBox(height: 12),
                               SizedBox(
-                                height: 300,
+                                height: (MediaQuery.of(context).size.height * 0.35).clamp(200.0, 320.0),
                                 child: filteredCategories.isEmpty
                                     ? Container(
                                         padding: const EdgeInsets.all(20),

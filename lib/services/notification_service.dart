@@ -616,7 +616,6 @@ class NotificationService {
 
   /// Tạo thông báo khi khoản vay quá hạn
   Future<void> _createOverdueNotification(Loan loan) async {
-    final loanRepo = LoanRepository();
     final notificationRepo = NotificationRepository();
     final now = DateTime.now();
     final daysOverdue = now.difference(loan.dueDate!).inDays;

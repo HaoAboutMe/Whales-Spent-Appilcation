@@ -80,11 +80,13 @@ class SimpleChart extends StatelessWidget {
   Widget _buildSimplePieChart(BuildContext context, ExpenseDataProvider provider, List<ExpenseCategory> categories, double total) {
     final legendHeight = categories.length <= 5 ? null : 120.0;
 
+    final chartHeight = (MediaQuery.of(context).size.height * 0.28).clamp(180.0, 260.0);
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
         SizedBox(
-          height: 220,
+          height: chartHeight,
           child: PieChart(
             PieChartData(
               pieTouchData: PieTouchData(
@@ -165,8 +167,10 @@ class SimpleChart extends StatelessWidget {
       );
     }
 
+    final barChartHeight = (MediaQuery.of(context).size.height * 0.35).clamp(240.0, 360.0);
+
     return SizedBox(
-      height: 300,
+      height: barChartHeight,
       child: Column(
         children: [
           Expanded(

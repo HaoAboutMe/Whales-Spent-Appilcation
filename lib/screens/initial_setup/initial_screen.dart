@@ -221,9 +221,9 @@ class _InitialScreenState extends State<InitialScreen> {
       body: SafeArea(
         child: Column(
           children: [
-            // Header Section (25% of screen height)
+            // Header Section (co giãn linh hoạt theo tỷ lệ màn hình có giới hạn min/max)
             SizedBox(
-              height: MediaQuery.of(context).size.height * 0.25,
+              height: (MediaQuery.of(context).size.height * 0.22).clamp(120.0, 180.0),
               width: double.infinity,
               child: Container(
                 color: darkBlue,
@@ -386,67 +386,78 @@ class _InitialScreenState extends State<InitialScreen> {
   }
 
   Widget _buildWelcomeStep() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final logoSize = (screenWidth * 0.35).clamp(100.0, 150.0);
+
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Welcome illustration using the whale logo
-          Container(
-            width: 160,
-            height: 160,
-            decoration: BoxDecoration(
-              color: white.withValues(alpha: 0.2),
-              shape: BoxShape.circle,
-            ),
-            child: Center(
-              child: ClipRRect(
-                borderRadius: BorderRadius.circular(80),
-                child: Image.asset(
-                  'assets/images/whales-spent-logo.png',
-                  width: 120,
-                  height: 120,
-                  fit: BoxFit.contain,
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Welcome illustration using the whale logo
+            Container(
+              width: logoSize,
+              height: logoSize,
+              decoration: BoxDecoration(
+                color: white.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Center(
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(logoSize / 2),
+                  child: Image.asset(
+                    'assets/images/whales-spent-logo.png',
+                    width: logoSize * 0.75,
+                    height: logoSize * 0.75,
+                    fit: BoxFit.contain,
+                  ),
                 ),
               ),
             ),
-          ),
 
-          const SizedBox(height: 40),
+            const SizedBox(height: 32),
 
-          // Updated welcome text
-          Text(
-            'Ứng dụng chi tiêu tốt và thông minh dành cho bạn',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 18,
-              color: white.withValues(alpha: 0.9),
-              fontWeight: FontWeight.w300,
+            // Updated welcome text
+            Text(
+              'Ứng dụng chi tiêu tốt và thông minh dành cho bạn',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                color: white.withValues(alpha: 0.9),
+                fontWeight: FontWeight.w300,
+              ),
             ),
-          ),
-        ],
+          ],
+        ),
       ),
     );
   }
 
   Widget _buildNameStep() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final iconContainerSize = (screenWidth * 0.28).clamp(70.0, 110.0);
+
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32.0),
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // User icon illustration
             if (MediaQuery.of(context).viewInsets.bottom == 0)
               Container(
-                width: 120,
-                height: 120,
+                width: iconContainerSize,
+                height: iconContainerSize,
                 decoration: BoxDecoration(
                   color: white.withValues(alpha: 0.2),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.person_outline,
-                  size: 60,
+                  size: iconContainerSize * 0.5,
                   color: white,
                 ),
               ),
@@ -464,7 +475,7 @@ class _InitialScreenState extends State<InitialScreen> {
               ),
             ),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 32),
 
             // Name input field
             Container(
@@ -503,23 +514,27 @@ class _InitialScreenState extends State<InitialScreen> {
   }
 
   Widget _buildCurrencyStep() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final iconContainerSize = (screenWidth * 0.28).clamp(70.0, 110.0);
+
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32.0),
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // Currency icon illustration
             Container(
-              width: 120,
-              height: 120,
+              width: iconContainerSize,
+              height: iconContainerSize,
               decoration: BoxDecoration(
                 color: white.withValues(alpha: 0.2),
                 shape: BoxShape.circle,
               ),
-              child: const Icon(
+              child: Icon(
                 Icons.currency_exchange,
-                size: 60,
+                size: iconContainerSize * 0.5,
                 color: white,
               ),
             ),
@@ -537,7 +552,7 @@ class _InitialScreenState extends State<InitialScreen> {
               ),
             ),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 24),
 
             // VND Option
             _buildCurrencyOption(
@@ -664,28 +679,31 @@ class _InitialScreenState extends State<InitialScreen> {
   }
 
   Widget _buildBalanceStep() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final iconContainerSize = (screenWidth * 0.28).clamp(70.0, 110.0);
     final hintText = _selectedCurrency == 'USD'
         ? 'Nhập số dư (USD)'
         : 'Nhập số dư (VND)';
 
     return Center(
-      child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 32.0),
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 32.0, vertical: 16),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             // Money icon illustration
             if (MediaQuery.of(context).viewInsets.bottom == 0)
               Container(
-                width: 120,
-                height: 120,
+                width: iconContainerSize,
+                height: iconContainerSize,
                 decoration: BoxDecoration(
                   color: white.withValues(alpha: 0.2),
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
+                child: Icon(
                   Icons.account_balance_wallet_outlined,
-                  size: 60,
+                  size: iconContainerSize * 0.5,
                   color: white,
                 ),
               ),
@@ -703,7 +721,7 @@ class _InitialScreenState extends State<InitialScreen> {
               ),
             ),
 
-            const SizedBox(height: 40),
+            const SizedBox(height: 32),
 
             // Balance input field
             Container(
@@ -746,37 +764,43 @@ class _InitialScreenState extends State<InitialScreen> {
   }
 
   Widget _buildSuccessStep() {
+    final screenWidth = MediaQuery.of(context).size.width;
+    final iconContainerSize = (screenWidth * 0.32).clamp(90.0, 140.0);
+
     return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          // Success icon illustration
-          Container(
-            width: 160,
-            height: 160,
-            decoration: BoxDecoration(
-              color: white.withValues(alpha: 0.2),
-              shape: BoxShape.circle,
+      child: SingleChildScrollView(
+        physics: const BouncingScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // Success icon illustration
+            Container(
+              width: iconContainerSize,
+              height: iconContainerSize,
+              decoration: BoxDecoration(
+                color: white.withValues(alpha: 0.2),
+                shape: BoxShape.circle,
+              ),
+              child: Icon(
+                Icons.check_circle_outline,
+                size: iconContainerSize * 0.5,
+                color: white,
+              ),
             ),
-            child: const Icon(
-              Icons.check_circle_outline,
-              size: 80,
-              color: white,
-            ),
-          ),
 
-          const SizedBox(height: 40),
+            const SizedBox(height: 28),
 
-          Text(
-            'Bạn đã sẵn sàng bắt đầu\nquản lý chi tiêu thông minh!',
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              fontSize: 18,
-              color: white.withValues(alpha: 0.9),
-              fontWeight: FontWeight.w300,
-              height: 1.4,
+            Text(
+              'Bạn đã sẵn sàng bắt đầu\nquản lý chi tiêu thông minh!',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                fontSize: 18,
+                color: white.withValues(alpha: 0.9),
+                fontWeight: FontWeight.w300,
+                height: 1.4,
+              ),
             ),
-          ),
 
           const SizedBox(height: 30),
 
@@ -836,7 +860,8 @@ class _InitialScreenState extends State<InitialScreen> {
                 ],
               ),
             ),
-        ],
+          ],
+        ),
       ),
     );
   }

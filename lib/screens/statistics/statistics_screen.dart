@@ -134,8 +134,7 @@ class _StatisticsContentState extends State<_StatisticsContent> with AutomaticKe
               color: Theme.of(context).colorScheme.primary,
               child: LayoutBuilder(
                 builder: (context, constraints) {
-                  final bottomPadding = MediaQuery.of(context).viewInsets.bottom +
-                      MediaQuery.of(context).padding.bottom;
+                  final bottomPadding = MediaQuery.of(context).padding.bottom;
                   return SingleChildScrollView(
                     physics: const AlwaysScrollableScrollPhysics(),
                     child: ConstrainedBox(

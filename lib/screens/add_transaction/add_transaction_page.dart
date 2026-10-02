@@ -395,7 +395,7 @@ class _AddTransactionPageState extends State<AddTransactionPage>
                 left: 20,
                 right: 20,
                 top: 20,
-                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+                bottom: MediaQuery.of(context).padding.bottom + 24,
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,

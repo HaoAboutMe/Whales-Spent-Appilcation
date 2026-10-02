@@ -19,7 +19,7 @@ class GreetingAppBar extends StatelessWidget implements PreferredSizeWidget {
   });
 
   @override
-  Size get preferredSize => const Size.fromHeight(60);
+  Size get preferredSize => const Size.fromHeight(64);
 
   @override
   Widget build(BuildContext context) {
@@ -32,23 +32,19 @@ class GreetingAppBar extends StatelessWidget implements PreferredSizeWidget {
       elevation: 0,
       surfaceTintColor: Colors.transparent,
       automaticallyImplyLeading: false,
-      toolbarHeight: 60,
-      flexibleSpace: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-          child: Row(
-            children: [
-              _buildAppLogo(context),
-              const SizedBox(width: 12),
-              _buildGreetingText(),
-              if (onScanPressed != null) ...[
-                _buildScanButton(context),
-                const SizedBox(width: 8),
-              ],
-              _buildNotificationButton(context),
-            ],
-          ),
-        ),
+      toolbarHeight: 64,
+      titleSpacing: 16,
+      title: Row(
+        children: [
+          _buildAppLogo(context),
+          const SizedBox(width: 12),
+          _buildGreetingText(),
+          if (onScanPressed != null) ...[
+            _buildScanButton(context),
+            const SizedBox(width: 8),
+          ],
+          _buildNotificationButton(context),
+        ],
       ),
     );
   }

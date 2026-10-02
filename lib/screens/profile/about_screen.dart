@@ -31,7 +31,7 @@ class AboutScreen extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.center,
           children: [
             // Logo và tên ứng dụng
-            _buildHeader(isDark),
+            _buildHeader(context, isDark),
 
             const SizedBox(height: 32),
 
@@ -68,13 +68,14 @@ class AboutScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildHeader(bool isDark) {
+  Widget _buildHeader(BuildContext context, bool isDark) {
+    final logoSize = (MediaQuery.of(context).size.width * 0.25).clamp(70.0, 110.0);
     return Column(
       children: [
         // Logo
         Container(
-          width: 100,
-          height: 100,
+          width: logoSize,
+          height: logoSize,
           decoration: BoxDecoration(
             color: isDark ? Colors.white: Colors.transparent ,
             borderRadius: BorderRadius.circular(24),

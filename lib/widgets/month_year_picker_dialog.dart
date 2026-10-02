@@ -53,9 +53,10 @@ class _MonthYearPickerDialogState extends State<MonthYearPickerDialog> {
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
       child: Container(
         padding: const EdgeInsets.all(20),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
             // Title
             Text(
               'Chọn Tháng và Năm',
@@ -108,10 +109,13 @@ class _MonthYearPickerDialogState extends State<MonthYearPickerDialog> {
             const SizedBox(height: 16),
 
             // Month Grid
-            SizedBox(
-              width: 300,
-              height: 240,
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: (MediaQuery.of(context).size.width * 0.85).clamp(240.0, 320.0),
+                maxHeight: (MediaQuery.of(context).size.height * 0.45).clamp(200.0, 260.0),
+              ),
               child: GridView.builder(
+                shrinkWrap: true,
                 gridDelegate: const SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: 3,
                   childAspectRatio: 2,
@@ -148,15 +152,19 @@ class _MonthYearPickerDialogState extends State<MonthYearPickerDialog> {
                               ),
                       ),
                       alignment: Alignment.center,
-                      child: Text(
-                        _monthNames[index],
-                        style: TextStyle(
-                          color: isSelected
-                              ? Colors.white
-                              : Theme.of(context).colorScheme.onSurface,
-                          fontWeight:
-                              isSelected ? FontWeight.bold : FontWeight.w500,
-                          fontSize: 14,
+                      padding: const EdgeInsets.symmetric(horizontal: 4),
+                      child: FittedBox(
+                        fit: BoxFit.scaleDown,
+                        child: Text(
+                          _monthNames[index],
+                          style: TextStyle(
+                            color: isSelected
+                                ? Colors.white
+                                : Theme.of(context).colorScheme.onSurface,
+                            fontWeight:
+                                isSelected ? FontWeight.bold : FontWeight.w500,
+                            fontSize: 14,
+                          ),
                         ),
                       ),
                     ),
@@ -204,7 +212,8 @@ class _MonthYearPickerDialogState extends State<MonthYearPickerDialog> {
           ],
         ),
       ),
-    );
+    ),
+  );
   }
 }
 

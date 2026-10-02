@@ -619,7 +619,7 @@ class _CategoryPickerSheetState extends State<CategoryPickerSheet> {
     final colorScheme = theme.colorScheme;
 
     return Container(
-      height: 320, // Tăng chiều cao từ 200 lên 320 để hiển thị nhiều icon hơn
+      height: (MediaQuery.of(context).size.height * 0.38).clamp(220.0, 360.0),
       decoration: BoxDecoration(
         border: Border.all(color: colorScheme.outline.withValues(alpha: 0.5)),
         borderRadius: BorderRadius.circular(12),

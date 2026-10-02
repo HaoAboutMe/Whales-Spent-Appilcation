@@ -392,42 +392,26 @@ class QuickActionCard extends StatelessWidget {
                   color: isPlaceholder ? Colors.grey.shade400 : color,
                 ),
                 const SizedBox(height: 4),
-                Builder(
-                  builder: (context) {
-                    final style = TextStyle(
-                      fontSize: 11,
-                      fontWeight: FontWeight.w600,
-                      color: isPlaceholder
-                          ? Colors.grey.shade400
-                          : Theme.of(context).colorScheme.onSurface,
-                    );
-
-                    // Đo width chữ hiện tại
-                    final tp = TextPainter(
-                      text: TextSpan(text: title, style: style),
-                      maxLines: 1,
-                      textDirection: TextDirection.ltr,
-                    )..layout();
-
-                    // Đo width chữ "Ngân sách"
-                    final limitTp = TextPainter(
-                      text: TextSpan(text: "Ngân sách", style: style),
-                      maxLines: 1,
-                      textDirection: TextDirection.ltr,
-                    )..layout();
-
-                    final isTooLong = tp.width > limitTp.width;
-
-                    return Text(
-                      title,
-                      style: style,
-                      maxLines: 1,
-                      overflow: isTooLong ? TextOverflow.ellipsis : TextOverflow.visible,
-                      softWrap: false,
-                      textAlign: TextAlign.center,
-                    );
-                  },
-                )
+                Flexible(
+                  child: FittedBox(
+                    fit: BoxFit.scaleDown,
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 2),
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: isPlaceholder
+                              ? Colors.grey.shade400
+                              : Theme.of(context).colorScheme.onSurface,
+                        ),
+                        maxLines: 1,
+                        textAlign: TextAlign.center,
+                      ),
+                    ),
+                  ),
+                ),
               ],
             ),
           ),
