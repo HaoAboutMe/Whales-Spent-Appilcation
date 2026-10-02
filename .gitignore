@@ -1,0 +1,93 @@
+# Miscellaneous
+*.class
+*.log
+*.pyc
+*.swp
+.DS_Store
+.atom/
+.build/
+.buildlog/
+.history
+.svn/
+.swiftpm/
+migrate_working_dir/
+
+# Windows system files
+Thumbs.db
+Thumbs.db:encryptable
+ehthumbs.db
+ehthumbs_vista.db
+*.stackdump
+[Dd]esktop.ini
+
+# macOS system files
+.DS_Store
+.AppleDouble
+.LSOverride
+Icon
+._*
+
+# IntelliJ / Android Studio
+*.iml
+*.ipr
+*.iws
+.idea/
+renew_whales_spent.iml
+android/renew_whales_spent_android.iml
+
+# Visual Studio Code
+.vscode/
+
+# Flutter / Dart
+**/doc/api/
+**/ios/Flutter/.last_build_id
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.pub-cache/
+.pub/
+.packages
+/build/
+/coverage/
+
+# Symbolication & Obfuscation
+app.*.symbols
+app.*.map.json
+
+# Android Studio / Gradle
+.gradle/
+**/android/.gradle/
+**/android/local.properties
+**/android/app/debug
+**/android/app/profile
+**/android/app/release
+**/android/captures/
+**/android/.cxx/
+GeneratedPluginRegistrant.java
+GeneratedPluginRegistrant.kt
+
+# Keystore & Signing Secrets
+*.keystore
+*.jks
+key.properties
+**/android/key.properties
+
+# iOS / CocoaPods
+ios/Pods/
+ios/.symlinks/
+ios/Flutter/Flutter.framework
+ios/Flutter/Flutter.podspec
+ios/Flutter/Generated.xcconfig
+ios/Flutter/app.flx
+ios/Runner.xcworkspace/xcuserdata/
+ios/Runner.xcodeproj/xcuserdata/
+ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
+*.mobileprovision
+
+# SQLite & Backup exports
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-journal
+*whales_spent_backup*.json

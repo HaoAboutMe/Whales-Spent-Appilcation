@@ -1,0 +1,1012 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:provider/provider.dart';
+import 'package:intl/intl.dart';
+import '../../database/repositories/repositories.dart';
+import '../../models/transaction.dart' as transaction_model;
+import '../../models/category.dart';
+import '../../utils/currency_formatter.dart';
+import '../../utils/icon_helper.dart';
+import '../../providers/currency_provider.dart';
+import '../../widgets/category_picker_sheet.dart';
+
+class EditTransactionScreen extends StatefulWidget {
+  final transaction_model.Transaction transaction;
+
+  const EditTransactionScreen({
+    super.key,
+    required this.transaction,
+  });
+
+  @override
+  State<EditTransactionScreen> createState() => _EditTransactionScreenState();
+}
+
+class _EditTransactionScreenState extends State<EditTransactionScreen>
+    with SingleTickerProviderStateMixin {
+  final TransactionRepository _transactionRepository = TransactionRepository();
+  final CategoryRepository _categoryRepository = CategoryRepository();
+  final UserRepository _userRepository = UserRepository();
+  final _formKey = GlobalKey<FormState>();
+
+  // Form controllers
+  final _amountController = TextEditingController();
+  final _descriptionController = TextEditingController();
+
+  // Form data
+  String _selectedType = 'income';
+  int? _selectedCategoryId;
+  DateTime _selectedDate = DateTime.now();
+
+  // UI state
+  bool _isLoading = false;
+  List<Category> _categories = [];
+  List<Category> _filteredCategories = [];
+
+  // Animation
+  late AnimationController _animationController;
+  late Animation<double> _fadeAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _initializeFromTransaction();
+    _initializeAnimations();
+    _loadCategories();
+  }
+
+  void _initializeFromTransaction() {
+    // Pre-populate form with existing transaction data
+    // Convert VND amount từ database sang currency hiện tại để hiển thị
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+      final displayAmount = currencyProvider.convertFromVND(widget.transaction.amount);
+      // Sử dụng formatForInputWithPrecision để giữ nguyên độ chính xác
+      _amountController.text = CurrencyFormatter.formatForInputWithPrecision(displayAmount);
+    });
+
+    _descriptionController.text = widget.transaction.description;
+    _selectedType = widget.transaction.type;
+    _selectedCategoryId = widget.transaction.categoryId;
+    _selectedDate = widget.transaction.date;
+  }
+
+  void _initializeAnimations() {
+    _animationController = AnimationController(
+      duration: const Duration(milliseconds: 300),
+      vsync: this,
+    );
+    _fadeAnimation = Tween<double>(
+      begin: 0.0,
+      end: 1.0,
+    ).animate(CurvedAnimation(
+      parent: _animationController,
+      curve: Curves.easeInOut,
+    ));
+    _animationController.forward();
+  }
+
+  @override
+  void dispose() {
+    _amountController.dispose();
+    _descriptionController.dispose();
+    _animationController.dispose();
+    super.dispose();
+  }
+
+  Future<void> _loadCategories() async {
+    try {
+      final categories = await _categoryRepository.getAllCategories();
+      setState(() {
+        _categories = categories;
+        _filterCategoriesByType();
+      });
+    } catch (e) {
+      debugPrint('Error loading categories: $e');
+      _showErrorSnackBar('Không thể tải danh mục');
+    }
+  }
+
+  void _filterCategoriesByType() {
+    setState(() {
+      _filteredCategories = _categories.where((c) => c.type == _selectedType).toList();
+
+      // Reset selected category if it's not in the filtered list
+      if (_selectedCategoryId != null &&
+          !_filteredCategories.any((c) => c.id == _selectedCategoryId)) {
+        _selectedCategoryId = null;
+      }
+    });
+  }
+
+  void _onTypeChanged(String type) {
+    setState(() {
+      _selectedType = type;
+      _filterCategoriesByType();
+    });
+  }
+
+  Future<void> _selectDate() async {
+    // Dismiss keyboard trước khi mở date picker
+    FocusScope.of(context).requestFocus(FocusNode());
+
+    final DateTime? picked = await showDatePicker(
+      context: context,
+      initialDate: _selectedDate,
+      firstDate: DateTime(2020),
+      lastDate: DateTime.now().add(const Duration(days: 365)),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        // Preserve the time component when changing date
+        _selectedDate = DateTime(
+          picked.year,
+          picked.month,
+          picked.day,
+          _selectedDate.hour,
+          _selectedDate.minute,
+        );
+      });
+    }
+  }
+
+  Future<void> _selectTime() async {
+    // Dismiss keyboard trước khi mở time picker
+    FocusScope.of(context).requestFocus(FocusNode());
+
+    final TimeOfDay? picked = await showTimePicker(
+      context: context,
+      initialTime: TimeOfDay.fromDateTime(_selectedDate),
+      builder: (context, child) {
+        return Theme(
+          data: Theme.of(context).copyWith(
+            colorScheme: Theme.of(context).colorScheme.copyWith(
+              primary: Theme.of(context).colorScheme.primary,
+            ),
+          ),
+          child: child!,
+        );
+      },
+    );
+
+    if (picked != null) {
+      setState(() {
+        _selectedDate = DateTime(
+          _selectedDate.year,
+          _selectedDate.month,
+          _selectedDate.day,
+          picked.hour,
+          picked.minute,
+        );
+      });
+    }
+  }
+
+  Future<void> _saveTransaction() async {
+    if (!_formKey.currentState!.validate()) {
+      return;
+    }
+
+    if (_selectedCategoryId == null) {
+      _showErrorSnackBar('Vui lòng chọn danh mục');
+      return;
+    }
+
+    setState(() {
+      _isLoading = true;
+    });
+
+    try {
+      // Parse input amount từ user
+      final inputAmount = CurrencyFormatter.parseAmount(_amountController.text);
+
+      // Convert từ currency hiện tại về VND để lưu vào database
+      final currencyProvider = Provider.of<CurrencyProvider>(context, listen: false);
+      final amountInVND = currencyProvider.convertToVND(inputAmount);
+
+      // Debug log để kiểm tra parsing và conversion
+      debugPrint('=== DEBUG EDIT TRANSACTION CONVERSION ===');
+      debugPrint('Input text: "${_amountController.text}"');
+      debugPrint('Parsed amount: $inputAmount ${currencyProvider.selectedCurrency}');
+      debugPrint('Converted to VND: $amountInVND VND');
+      debugPrint('Exchange rate: ${currencyProvider.exchangeRate}');
+      debugPrint('==========================================');
+
+      if (inputAmount <= 0) {
+        _showErrorSnackBar('Số tiền phải lớn hơn 0');
+        return;
+      }
+
+      // Calculate balance difference for update
+      final oldAmount = widget.transaction.amount;
+      final oldType = widget.transaction.type;
+
+      // Validate balance for expense transactions
+      // Calculate what the new balance would be after this edit
+      if (_selectedType == 'expense') {
+        final currentUserId = await _userRepository.getCurrentUserId();
+        final currentUser = await _userRepository.getUserById(currentUserId);
+
+        if (currentUser != null) {
+          // Calculate the balance after reversing old transaction
+          double projectedBalance = currentUser.balance;
+
+          // Reverse old transaction effect
+          if (oldType == 'income') {
+            projectedBalance -= oldAmount;
+          } else if (oldType == 'expense') {
+            projectedBalance += oldAmount;
+          }
+
+          // Check if new expense would exceed available balance
+          if (amountInVND > projectedBalance) {
+            setState(() {
+              _isLoading = false;
+            });
+            _showErrorSnackBar('Số tiền chi tiêu vượt quá số dư hiện tại (${CurrencyFormatter.formatAmount(projectedBalance)})');
+            return;
+          }
+        }
+      }
+
+      final description = _descriptionController.text.trim();
+
+      // Auto-fill description with category name if empty
+      final finalDescription = description.isEmpty && _selectedCategoryId != null
+          ? _filteredCategories.firstWhere((c) => c.id == _selectedCategoryId).name
+          : description;
+
+      // Create updated transaction
+      final updatedTransaction = widget.transaction.copyWith(
+        amount: amountInVND, // Sử dụng amount đã chuyển đổi về VND
+        description: finalDescription,
+        date: _selectedDate,
+        categoryId: _selectedCategoryId,
+        type: _selectedType,
+        updatedAt: DateTime.now(),
+      );
+
+      // Insert transaction first
+      debugPrint('=== DEBUG TRANSACTION CREATION (UPDATED) ===');
+      debugPrint('Transaction amount: ${updatedTransaction.amount}');
+      debugPrint('Transaction type: ${updatedTransaction.type}');
+
+      await _transactionRepository.updateTransaction(updatedTransaction);
+
+      // Update user balance dynamically using current user ID
+      debugPrint('=== DEBUG BALANCE UPDATE (UPDATED) ===');
+      debugPrint('Calling updateUserBalanceAfterTransaction with amount: $amountInVND, type: $_selectedType');
+
+      await _updateUserBalanceAfterEdit(
+        oldAmount: oldAmount,
+        oldType: oldType,
+        newAmount: amountInVND,
+        newType: _selectedType,
+      );
+
+      // Check if widget is still mounted before using context
+      if (!mounted) return;
+
+      Navigator.of(context).pop(true); // Return true to indicate success
+    } catch (e) {
+      debugPrint('Error saving transaction: $e');
+      if (mounted) {
+        _showErrorSnackBar('Không thể lưu giao dịch: ${e.toString()}');
+      }
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
+    }
+  }
+
+  Future<void> _updateUserBalanceAfterEdit({
+    required double oldAmount,
+    required String oldType,
+    required double newAmount,
+    required String newType,
+  }) async {
+    // First, reverse the old transaction's effect on balance
+    double balanceAdjustment = 0;
+
+    // Reverse old transaction
+    if (oldType == 'income') {
+      balanceAdjustment -= oldAmount; // Subtract old income
+    } else if (oldType == 'expense') {
+      balanceAdjustment += oldAmount; // Add back old expense
+    }
+
+    // Apply new transaction
+    if (newType == 'income') {
+      balanceAdjustment += newAmount; // Add new income
+    } else if (newType == 'expense') {
+      balanceAdjustment -= newAmount; // Subtract new expense
+    }
+
+    debugPrint('=== DEBUG BALANCE UPDATE (EDIT) ===');
+    debugPrint('Balance adjustment: $balanceAdjustment');
+
+    // Update balance with net change
+    if (balanceAdjustment != 0) {
+      try {
+        final currentUserId = await _userRepository.getCurrentUserId();
+        final currentUser = await _userRepository.getUserById(currentUserId);
+
+        if (currentUser != null) {
+          final newBalance = currentUser.balance + balanceAdjustment;
+          final updatedUser = currentUser.copyWith(balance: newBalance);
+          await _userRepository.updateUser(updatedUser);
+          debugPrint('Updated balance from ${currentUser.balance} to $newBalance');
+        }
+      } catch (e) {
+        debugPrint('Error updating user balance: $e');
+        rethrow;
+      }
+    }
+  }
+
+  void _showErrorSnackBar(String message) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(
+        content: Text(message),
+        backgroundColor: Colors.red,
+        behavior: SnackBarBehavior.floating,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)),
+      ),
+    );
+  }
+
+  String _getTransactionTypeText() {
+    switch (_selectedType) {
+      case 'income':
+        return 'thu nhập';
+      case 'expense':
+        return 'chi tiêu';
+      default:
+        return 'giao dịch';
+    }
+  }
+
+  Color _getTypeColor(String type) {
+    switch (type) {
+      case 'income':
+        return const Color(0xFF4CAF50); // Green for income
+      case 'expense':
+        return const Color(0xFFF44336); // Red for expense
+      default:
+        return const Color(0xFF2196F3); // Blue for default
+    }
+  }
+
+  IconData _getTypeIcon(String type) {
+    switch (type) {
+      case 'income':
+        return Icons.trending_up;
+      case 'expense':
+        return Icons.trending_down;
+      default:
+        return Icons.payment;
+    }
+  }
+
+  IconData _getCategoryIcon(String iconName) {
+    return IconHelper.getCategoryIcon(iconName);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Scaffold(
+      backgroundColor: theme.scaffoldBackgroundColor,
+      resizeToAvoidBottomInset: true, // Enable automatic screen resize for keyboard
+      appBar: AppBar(
+        title: const Text(
+          'Chỉnh sửa giao dịch',
+          style: TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
+        backgroundColor: colorScheme.primary,
+        foregroundColor: Colors.white,
+        elevation: 0,
+        iconTheme: const IconThemeData(
+            color: Colors.white
+        ),
+      ),
+      body: SafeArea(
+        child: FadeTransition(
+          opacity: _fadeAnimation,
+          child: Form(
+            key: _formKey,
+            child: SingleChildScrollView(
+              padding: EdgeInsets.only(
+                left: 20,
+                right: 20,
+                top: 20,
+                bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildTypeSelector(),
+                  const SizedBox(height: 24),
+                  _buildAmountField(),
+                  const SizedBox(height: 20),
+                  _buildDescriptionField(),
+                  const SizedBox(height: 20),
+                  _buildCategorySelector(),
+                  const SizedBox(height: 20),
+                  _buildDateSelector(),
+                  const SizedBox(height: 32),
+                  _buildSaveButton(),
+                  const SizedBox(height: 20), // Extra space for better scrolling
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTypeSelector() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Loại giao dịch',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 16),
+          Row(
+            children: [
+              Expanded(child: _buildTypeButton('income', 'Thu nhập', Icons.trending_up)),
+              const SizedBox(width: 12),
+              Expanded(child: _buildTypeButton('expense', 'Chi tiêu', Icons.trending_down)),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTypeButton(String type, String label, IconData icon) {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+    final isSelected = _selectedType == type;
+    final color = _getTypeColor(type);
+
+    return GestureDetector(
+      onTap: () => _onTypeChanged(type),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 8),
+        decoration: BoxDecoration(
+          color: isSelected ? color.withValues(alpha: 0.1) : Colors.transparent,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color: isSelected ? color : colorScheme.outline.withValues(alpha: 0.5),
+            width: isSelected ? 2 : 1,
+          ),
+        ),
+        child: Column(
+          children: [
+            Icon(
+              icon,
+              color: isSelected ? color : colorScheme.onSurfaceVariant,
+              size: 24,
+            ),
+            const SizedBox(height: 4),
+            Text(
+              label,
+              style: TextStyle(
+                color: isSelected ? color : colorScheme.onSurfaceVariant,
+                fontWeight: isSelected ? FontWeight.bold : FontWeight.normal,
+                fontSize: 12,
+              ),
+              textAlign: TextAlign.center,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildAmountField() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Số tiền',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _amountController,
+            keyboardType: const TextInputType.numberWithOptions(decimal: true),
+            inputFormatters: [
+              CurrencyInputFormatter(), // Chỉ sử dụng formatter custom
+            ],
+            decoration: InputDecoration(
+              hintText: 'Nhập số tiền (${Provider.of<CurrencyProvider>(context, listen: false).selectedCurrency})',
+              hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+              suffixText: Provider.of<CurrencyProvider>(context, listen: false).currencySymbol,
+              suffixStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+              prefixIcon: Icon(
+                Icons.attach_money,
+                color: _getTypeColor(_selectedType),
+              ),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.5)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: _getTypeColor(_selectedType), width: 2),
+              ),
+              filled: true,
+              fillColor: colorScheme.surface,
+            ),
+            style: TextStyle(
+              fontSize: 18,
+              fontWeight: FontWeight.bold,
+              color: _getTypeColor(_selectedType),
+            ),
+            validator: (value) {
+              if (value == null || value.isEmpty) {
+                return 'Vui lòng nhập số tiền';
+              }
+              final amount = CurrencyFormatter.parseAmount(value);
+              if (amount <= 0) {
+                return 'Số tiền phải lớn hơn 0';
+              }
+              return null;
+            },
+          ),
+          // Helper text for currency conversion
+          Consumer<CurrencyProvider>(
+            builder: (context, currencyProvider, child) {
+              if (currencyProvider.selectedCurrency == 'USD') {
+                return Padding(
+                  padding: const EdgeInsets.only(top: 8.0, left: 12.0),
+                  child: Text(
+                    'Sẽ được chuyển đổi thành VND khi lưu (tỷ giá: 1 USD = ${currencyProvider.exchangeRate.toStringAsFixed(0)} VND)',
+                    style: TextStyle(
+                      fontSize: 12,
+                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      fontStyle: FontStyle.italic,
+                    ),
+                  ),
+                );
+              }
+              return const SizedBox.shrink();
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDescriptionField() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Mô tả',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          TextFormField(
+            controller: _descriptionController,
+            maxLines: 3,
+            maxLength: 70,
+            decoration: InputDecoration(
+              hintText: 'Nhập mô tả cho giao dịch...',
+              hintStyle: TextStyle(color: colorScheme.onSurfaceVariant),
+              prefixIcon: Icon(Icons.description, color: colorScheme.onSurfaceVariant),
+              counterText: '',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: colorScheme.outline.withValues(alpha: 0.5)),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(12),
+                borderSide: BorderSide(color: colorScheme.primary, width: 2),
+              ),
+              filled: true,
+              fillColor: colorScheme.surface,
+            ),
+            style: TextStyle(color: colorScheme.onSurface),
+            validator: (value) {
+              return null;
+            },
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCategorySelector() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    // Tìm category được chọn một lần để tránh lặp lại
+    final selectedCategory = _selectedCategoryId != null
+        ? _filteredCategories.cast<Category?>().firstWhere(
+            (c) => c?.id == _selectedCategoryId,
+            orElse: () => null,
+          )
+        : null;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Danh mục',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          InkWell(
+            onTap: _showAddCategorySheet,
+            borderRadius: BorderRadius.circular(12),
+            child: Container(
+              decoration: BoxDecoration(
+                color: colorScheme.surface,
+                borderRadius: BorderRadius.circular(12),
+                border: Border.all(
+                  color: colorScheme.outline.withValues(alpha: 0.5),
+                ),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              child: Row(
+                children: [
+                  Icon(
+                    selectedCategory != null
+                        ? _getCategoryIcon(selectedCategory.icon)
+                        : Icons.category,
+                    size: 20,
+                    color: selectedCategory != null
+                        ? _getTypeColor(_selectedType)
+                        : colorScheme.onSurfaceVariant,
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      selectedCategory?.name ?? 'Chọn danh mục',
+                      style: TextStyle(
+                        fontSize: 16,
+                        color: selectedCategory != null
+                            ? colorScheme.onSurface
+                            : colorScheme.onSurfaceVariant,
+                      ),
+                    ),
+                  ),
+                  Icon(
+                    Icons.arrow_drop_down,
+                    color: colorScheme.onSurfaceVariant,
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildDateSelector() {
+    final theme = Theme.of(context);
+    final colorScheme = theme.colorScheme;
+
+    return Container(
+      padding: const EdgeInsets.all(20),
+      decoration: BoxDecoration(
+        color: colorScheme.surface,
+        borderRadius: BorderRadius.circular(16),
+        boxShadow: [
+          BoxShadow(
+            color: colorScheme.shadow.withValues(alpha: 0.1),
+            blurRadius: 8,
+            offset: const Offset(0, 2),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Ngày và giờ giao dịch',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+              color: colorScheme.onSurface,
+            ),
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              // Date picker
+              Expanded(
+                flex: 3,
+                child: InkWell(
+                  onTap: _selectDate,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: colorScheme.outline.withValues(alpha: 0.5)),
+                      borderRadius: BorderRadius.circular(12),
+                      color: colorScheme.surface,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.calendar_today, color: colorScheme.onSurfaceVariant, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${_selectedDate.day.toString().padLeft(2, '0')}/${_selectedDate.month.toString().padLeft(2, '0')}/${_selectedDate.year}',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                        Icon(Icons.arrow_drop_down, color: colorScheme.onSurfaceVariant),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+              const SizedBox(width: 12),
+              // Time picker
+              Expanded(
+                flex: 2,
+                child: InkWell(
+                  onTap: _selectTime,
+                  child: Container(
+                    padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 12),
+                    decoration: BoxDecoration(
+                      border: Border.all(color: colorScheme.outline.withValues(alpha: 0.5)),
+                      borderRadius: BorderRadius.circular(12),
+                      color: colorScheme.surface,
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.access_time, color: colorScheme.onSurfaceVariant, size: 20),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            '${_selectedDate.hour.toString().padLeft(2, '0')}:${_selectedDate.minute.toString().padLeft(2, '0')}',
+                            style: TextStyle(
+                              fontSize: 16,
+                              color: colorScheme.onSurface,
+                            ),
+                          ),
+                        ),
+                        Icon(Icons.arrow_drop_down, color: colorScheme.onSurfaceVariant),
+                      ],
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSaveButton() {
+    return SizedBox(
+      width: double.infinity,
+      height: 56,
+      child: ElevatedButton(
+        onPressed: _isLoading ? null : _saveTransaction,
+        style: ElevatedButton.styleFrom(
+          backgroundColor: _getTypeColor(_selectedType),
+          foregroundColor: Colors.white,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          elevation: 4,
+        ),
+        child: _isLoading
+            ? const CircularProgressIndicator(
+          valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
+        )
+            : Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(_getTypeIcon(_selectedType)),
+            const SizedBox(width: 8),
+            Text(
+              'Lưu ${_getTransactionTypeText()}',
+              style: const TextStyle(
+                fontSize: 16,
+                fontWeight: FontWeight.bold,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // Mở CategoryPickerSheet mới
+  Future<void> _showAddCategorySheet() async {
+    // Dismiss keyboard trước khi mở category picker
+    FocusScope.of(context).requestFocus(FocusNode());
+
+    final selectedCategory = await openCategoryPickerSheet(
+      context,
+      type: _selectedType,
+      selected: _selectedCategoryId != null && _filteredCategories.isNotEmpty
+          ? _filteredCategories.cast<Category?>().firstWhere((c) => c?.id == _selectedCategoryId, orElse: () => null)
+          : null,
+    );
+
+    if (selectedCategory != null) {
+      // Tải lại danh sách categories để có category mới
+      await _loadCategories();
+
+      // Cập nhật category được chọn
+      if (mounted) {
+        setState(() {
+          _selectedCategoryId = selectedCategory.id;
+        });
+      }
+    }
+  }
+}
+
+class CurrencyInputFormatter extends TextInputFormatter {
+  @override
+  TextEditingValue formatEditUpdate(
+      TextEditingValue oldValue,
+      TextEditingValue newValue,
+      ) {
+    // Cho phép empty string
+    if (newValue.text.isEmpty) {
+      return newValue.copyWith(text: '');
+    }
+
+    // Get current currency from CurrencyFormatter
+    final currentCurrency = CurrencyFormatter.getCurrency();
+
+    if (currentCurrency == 'USD') {
+      // Cho USD: chỉ cho phép digits và 1 dấu chấm
+      String filtered = newValue.text;
+
+      // Loại bỏ tất cả ký tự không hợp lệ
+      filtered = filtered.replaceAll(RegExp(r'[^0-9.]'), '');
+
+      // Đảm bảo chỉ có 1 dấu chấm
+      final parts = filtered.split('.');
+      if (parts.length > 2) {
+        filtered = parts[0] + '.' + parts.sublist(1).join('');
+      }
+
+      // Giới hạn 3 chữ số thập phân
+      if (parts.length == 2 && parts[1].length > 3) {
+        filtered = parts[0] + '.' + parts[1].substring(0, 3);
+      }
+
+      return newValue.copyWith(
+        text: filtered,
+        selection: TextSelection.collapsed(offset: filtered.length),
+      );
+    } else {
+      // Cho VND: chỉ cho phép digits và dấu phẩy
+      String filtered = newValue.text.replaceAll(RegExp(r'[^0-9,]'), '');
+
+      // Auto-format với dấu phẩy ngăn cách hàng nghìn cho VND
+      if (filtered.isNotEmpty) {
+        final digitsOnly = filtered.replaceAll(',', '');
+        if (digitsOnly.isNotEmpty) {
+          final amount = double.tryParse(digitsOnly) ?? 0;
+          if (amount > 0) {
+            final formatter = NumberFormat('#,###', 'vi_VN');
+            filtered = formatter.format(amount);
+          }
+        }
+      }
+
+      return newValue.copyWith(
+        text: filtered,
+        selection: TextSelection.collapsed(offset: filtered.length),
+      );
+    }
+  }
+}
