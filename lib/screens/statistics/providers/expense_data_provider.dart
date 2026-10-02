@@ -4,6 +4,7 @@ import '../../../config/app_theme.dart';
 import '../../../database/database_helper.dart';
 import '../../../models/transaction.dart' as transaction_model;
 import '../../../utils/currency_formatter.dart';
+import '../../../utils/icon_helper.dart';
 import '../models/expense_category.dart';
 import '../models/daily_expense.dart';
 
@@ -279,55 +280,7 @@ class ExpenseDataProvider extends ChangeNotifier {
 
   // Chuyển đổi string icon thành IconData
   IconData _getIconFromString(String iconString) {
-    // Try to parse as codePoint (for newer categories)
-    final codePoint = int.tryParse(iconString);
-    if (codePoint != null) {
-      return IconData(codePoint, fontFamily: 'MaterialIcons');
-    }
-
-    // Clean the icon string
-    String cleanedIcon = iconString.toLowerCase();
-    if (cleanedIcon.startsWith('icons.')) {
-      cleanedIcon = cleanedIcon.substring(6);
-    }
-
-    // Fallback to default icon mapping
-    const iconMap = {
-      'restaurant': Icons.restaurant,
-      'food': Icons.restaurant,
-      'local_gas_station': Icons.local_gas_station,
-      'transport': Icons.directions_car,
-      'directions_car': Icons.directions_car,
-      'shopping_cart': Icons.shopping_cart,
-      'shopping_bag': Icons.shopping_bag,
-      'shopping': Icons.shopping_cart,
-      'receipt': Icons.receipt,
-      'movie': Icons.movie,
-      'entertainment': Icons.movie,
-      'medical_services': Icons.medical_services,
-      'health': Icons.medical_services,
-      'school': Icons.school,
-      'education': Icons.school,
-      'home': Icons.home,
-      'phone': Icons.phone,
-      'electrical_services': Icons.electrical_services,
-      'utilities': Icons.electrical_services,
-      'water_drop': Icons.water_drop,
-      'work': Icons.work,
-      'business': Icons.work,
-      'savings': Icons.savings,
-      'card_giftcard': Icons.card_giftcard,
-      'travel': Icons.flight,
-      'flight': Icons.flight,
-      'attach_money': Icons.attach_money,
-      'trending_up': Icons.trending_up,
-      'fitness_center': Icons.fitness_center,
-      'more_horiz': Icons.more_horiz,
-      'other': Icons.category,
-      'category': Icons.category,
-    };
-
-    return iconMap[cleanedIcon] ?? Icons.category;
+    return IconHelper.getCategoryIcon(iconString);
   }
 
   // Lấy màu cho danh mục chi tiêu

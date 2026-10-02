@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import '../models/icon_group.dart';
 
 /// Helper class để xử lý icon từ categoryIcon string
 /// Hỗ trợ cả codePoint (số) và string name (tên icon)
@@ -45,15 +46,26 @@ class IconHelper {
     'call_received': Icons.call_received, // Đi vay
     'payment': Icons.payment, // Trả nợ
     'account_balance_wallet': Icons.account_balance_wallet, // Thu nợ
-
-    // ✅ Bổ sung icon cho hóa đơn
-
   };
+
+  /// Ánh xạ từ codePoint sang hằng số IconData để hỗ trợ tree-shaking khi build release
+  static final Map<int, IconData> _codePointMap = () {
+    final map = <int, IconData>{};
+    for (final icons in IconGroupHelper.groupedIcons.values) {
+      for (final icon in icons) {
+        map[icon.codePoint] = icon;
+      }
+    }
+    for (final icon in fallbackIcons.values) {
+      map[icon.codePoint] = icon;
+    }
+    return map;
+  }();
 
   /// Build icon từ categoryIcon string
   ///
   /// Hỗ trợ 3 dạng:
-  /// - Số (codePoint): "58253" → IconData(58253, fontFamily: 'MaterialIcons')
+  /// - Số (codePoint): "58253" → Icons.restaurant (qua _codePointMap)
   /// - Tên icon: "medical_services" → Icons.medical_services
   /// - Không tìm thấy → Icons.category (mặc định)
   static IconData getCategoryIcon(String categoryIcon) {
@@ -64,7 +76,7 @@ class IconHelper {
     // Thử parse thành số (codePoint)
     final iconCode = int.tryParse(categoryIcon);
     if (iconCode != null) {
-      return IconData(iconCode, fontFamily: 'MaterialIcons');
+      return _codePointMap[iconCode] ?? Icons.category;
     }
 
     // Nếu không phải số, tìm trong fallback map
