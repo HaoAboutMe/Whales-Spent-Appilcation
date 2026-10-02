@@ -91,3 +91,7 @@ ios/Runner.xcodeproj/project.xcworkspace/xcuserdata/
 *.sqlite
 *.sqlite-journal
 *whales_spent_backup*.json
+
+# Documents & Project Notes
+documents/
+
